@@ -1,13 +1,12 @@
 package com.example.reto1_tarjetapresentacion
 
 import android.content.Intent
-import android.media.Image
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,14 +17,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -33,21 +37,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.example.reto1_tarjetapresentacion.ui.theme.Reto1TarjetaPresentacionTheme
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            //Aplicamos el tema de colores del proyecto a todo lo de dentro
-            Reto1TarjetaPresentacionTheme {
-                //Surface = el "lienzo" de fondo que ocupa toda la pantalla
+            var isDarkMode by remember { mutableStateOf(false) }
+
+            Reto1TarjetaPresentacionTheme(darkTheme = isDarkMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    //Aquí llamama a NUESTRA función, la que dibuja la tarjeta
-                    TargetaPresentacion()
+                    TargetaPresentacion(
+                        isDarkMode = isDarkMode,
+                        onToggleTheme = { isDarkMode = !isDarkMode }
+                    )
                 }
             }
         }
@@ -55,61 +63,117 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun TargetaPresentacion() {
-    //LocalContext: así un Composable "pide prestado" el contexto de Android
-    //Lo necesitamos para poder abrir el navegador desde el botón
+fun TargetaPresentacion(
+    isDarkMode: Boolean = false,
+    onToggleTheme: () -> Unit = {}
+) {
     val context = LocalContext.current
-    //1. COLUMN: apila los elementos de arriba a abajo (como un flexbox vertical)
+
     Column(
         modifier = Modifier
-            .fillMaxSize() //Ocupa toda la pantalla
-            .padding(16.dp), //margen para que nada toque los bordes
-        horizontalAlignment = Alignment.CenterHorizontally, //centra el eje X
-        verticalArrangement = Arrangement.Center //centra el eje Y
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        //2. IMAGE: la foto de perfil
-        //Requiere un archivo 'foto-perfil' dentro de res/drawable
+        // --- FOTO DE PERFIL COMO BOTÓN DE MODO OSCURO ---
         Image(
             painter = painterResource(id = R.drawable.foto_perfil),
-            contentDescription = "Foto de perfil usuario", //para accesebilidad (lectores)
+            contentDescription = "Cambiar modo oscuro",
             modifier = Modifier
-                .size(150.dp) //tamaño fijo: 150x150
-                .clip(CircleShape), //la recorta en forma de círculo
-            contentScale = ContentScale.Crop //rellena el círculo sin deformar la imagen
+                .size(150.dp)
+                .clip(CircleShape)
+                .clickable { onToggleTheme() }, // Al hacer clic se alterna el tema
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopCenter
         )
-        //Hueco vacío entre la imagen y el texto
+
         Spacer(modifier = Modifier.height(24.dp))
 
-        //3. TEXT: nombre
+        // Nombre
         Text(
             text = "Nolan Martínez Gómez",
             fontSize = 32.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
         )
 
-        //TEXT: rol o profesión
+        // Rol
         Text(
-            text = "Desarrollar de aplicaciones multiplataforma",
+            text = "Estudiante de DAM",
             fontSize = 18.sp,
             color = MaterialTheme.colorScheme.secondary
         )
 
-        //Hueco más grande antes del botón
         Spacer(modifier = Modifier.height(32.dp))
 
-        //4. BUTTON: enlace a GitHub
+        // Botón GitHub
         Button(
             onClick = {
-                /*1. Intent ACTION_VIEW: le decimos a Android "quiero VER este recurso"
-                y el sistema decide qué app usar (normalmente, el navegador)
-                2. Uri.parse convierte el texto de la URL en el formato que Android entiende
-                3. startActivity lanza esa acción*/
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/MrSonbi"))
                 context.startActivity(intent)
             },
-            modifier = Modifier.fillMaxWidth(0.8f)
+            modifier = Modifier.fillMaxWidth(0.8f),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF6E40C4),
+                contentColor = Color.White
+            )
         ) {
             Text(text = "Mi perfil de GitHub")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        //Botón LinkedIn
+        Button(
+            onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.linkedin.com/"))
+                context.startActivity(intent)
+            },
+            modifier = Modifier.fillMaxWidth(0.8f),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF0077B5),
+                contentColor = Color.White
+            )
+        ) {
+            Text(text = "Mi perfil de LinkedIn")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        //Botón CV
+        Button(
+            onClick = {
+                try {
+                    // 1. Copiamos el recurso raw a un archivo temporal local
+                    val inputStream = context.resources.openRawResource(R.raw.cv)
+                    val file = File(context.cacheDir, "cv.pdf")
+                    file.outputStream().use { inputStream.copyTo(it) }
+
+                    // 2. Generamos la Uri segura con FileProvider
+                    val contentUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        file
+                    )
+
+                    // 3. Abrimos el PDF
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(contentUri, "application/pdf")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            },
+            modifier = Modifier.fillMaxWidth(0.8f),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF1DB954),
+                contentColor = Color.White
+            )
+        ) {
+            Text(text = "Ver CV (PDF)")
         }
     }
 }
