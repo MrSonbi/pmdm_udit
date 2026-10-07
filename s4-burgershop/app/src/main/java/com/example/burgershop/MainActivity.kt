@@ -9,13 +9,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,15 +29,23 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.burgershop.ui.theme.BurgershopTheme
+import kotlinx.coroutines.delay
 import java.nio.file.WatchEvent
 
 //ACTIVITY PRINCIPAL
@@ -48,7 +61,8 @@ class MainActivity : ComponentActivity() {
                     //Surface: el lienzo de fondo que ocupa la pantalla
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    CatalogoHamburguesas(catalogoHamburguesas)
+                    //CatalogoHamburguesas(catalogoHamburguesas)
+                    PantallaPrincipal()
                 }
             }
         }
@@ -99,12 +113,17 @@ val catalogoHamburguesas = listOf(
 //Vertical solo dibuja de memoria lo que se ve en pantalla (por eso se llama "lazy", perezoso): es eficiente aunque la lista tenga cientos de elementos
 @Composable
 fun CatalogoHamburguesas(productos: List<Producto>) {
-    LazyColumn(
+//    LazyColumn(
+//        modifier = Modifier.fillMaxSize(),
+//        //margen alrededor de toda la lista
+//        contentPadding = PaddingValues(16.dp),
+//        //espacio entra una tarjeta y la siguiente
+//        verticalArrangement = Arrangement.spacedBy(16.dp)
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 250.dp),
         modifier = Modifier.fillMaxSize(),
-        //margen alrededor de toda la lista
         contentPadding = PaddingValues(16.dp),
-        //espacio entra una tarjeta y la siguiente
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         items(productos) { producto ->
             TargetaProducto(producto)
@@ -143,7 +162,9 @@ fun TargetaProducto(producto: Producto) {
                 Text(
                     text = producto.nombre,
                     fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -164,5 +185,33 @@ fun TargetaProducto(producto: Producto) {
                 }
             }
         }
+    }
+}
+
+
+//PANTALLA DE PORTADA
+
+@Composable
+fun PantallaPrincipal() {
+
+    //remember + mutableStateOf: crea una variable que Compose vigila
+    //Cuando su valor cambia, Compose vuelve a dibujar la pantalla solo
+    //sin que tengas que hacer nada más
+
+    var mostrarPortada by remember { mutableStateOf(true) }
+    //LaunchedEffect: Lanza una tarea que se ejecuta una sola vez
+    //cuando la pantalla aparece, debe esperar 1.5s y luego
+    //cambia de estado para ocultar esa pantalla
+    LaunchedEffect(Unit) {
+        delay(1500)
+        mostrarPortada=false
+    }
+
+    if (mostrarPortada) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("🍔 BurgerShop", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        }
+    } else {
+        CatalogoHamburguesas(productos = catalogoHamburguesas)
     }
 }
