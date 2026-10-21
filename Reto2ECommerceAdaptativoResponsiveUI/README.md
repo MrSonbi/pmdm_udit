@@ -16,7 +16,7 @@
 ### Esquema de referencia
 Así debería comportarse tu cuadrícula: mismas tarjetas, mismo código, más columnas cuando hay más espacio.
 
-![Esquema responsive: móvil en vertical (2 columnas) y tablet en horizontal (4 columnas)](img/esquema-responsive.png)
+![Esquema responsive: móvil en vertical (2 columnas) y tablet en horizontal (4 columnas)](image-3.png)
 
 ## 🎯 Objetivo del reto
 Comprender la fragmentación de pantallas en Android y resolver los problemas de visualización en distintos perfiles de dispositivos. Pasar de un diseño estático (una lista infinita que se deforma) a una interfaz *responsive* (una cuadrícula inteligente) utilizando componentes de Jetpack Compose que calculan el espacio disponible en tiempo real.
