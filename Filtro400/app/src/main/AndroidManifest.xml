@@ -23,6 +23,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+            Servicio que Android usa para preguntarnos por cada llamada.
+            El permiso BIND_SCREENING_SERVICE lo protege: solo el sistema
+            puede vincularlo. El intent-filter es obligatorio para que el
+            rol ROLE_CALL_SCREENING reconozca la app.
+        -->
+        <service
+            android:name=".FiltroLlamadasService"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>
