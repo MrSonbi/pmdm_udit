@@ -130,3 +130,66 @@ class PantallaCatalogo extends StatelessWidget {
     );
   }
 }
+
+//TARGETA DE PRODUCTO
+
+class TargetaProducto extends StatelessWidget {
+  final Producto producto;//Este es el dato para dibujar
+  const TargetaProducto({super.key, required this.producto});
+
+  @override
+
+  Widget build(BuildContext context) {
+    //Card: una caja con sombras y bordes redondeados por defecto
+    //Es igual a nuestro Card de Compose
+    return Card(
+      margin: EdgeInsets.zero,//el hueco entre las targetas
+      clipBehavior: Clip.antiAlias,//recorta la imagen a las esquinas redondeadas
+
+      //Column: apila elementos de arriba a abajo
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,//alinea el texto a la izquierda
+        children: [
+          //Expanded: La imagen ocupa tod0 el alto
+          Expanded(
+            child: Image.asset(
+              producto.imagenAsset,
+              width: double.infinity,//ocupa tod0 el ancho disponible
+              fit: BoxFit.cover//= ContentScale.Crop en Kotlin: recorta el contenido sin deformar
+            ),
+          ),
+          //Segunda Column, con margen interior, para el texto y el botón
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,//ocupa solo lo que necesita su contenido
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  producto.nombre,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
+                ),
+                const SizedBox(height: 4),//Spacer(height) en kotlin - hueco pequeño
+                Text(
+                    producto.precio,
+                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.primary)//color del tema actual
+                ),
+                const SizedBox(height: 8),//Spacer(height) en kotlin - hueco pequeño
+                SizedBox(
+                  width: double.infinity,//el boton ocupa tod0 el ancho
+                  child: ElevatedButton(
+                    onPressed: () {
+                      //de momento no hace nada pero en consola dirá producto añadido al carrito
+                      print('¡Añadido: ${producto.nombre} al carrito!');
+                    },
+                    child: const Text("Añadir al carrito")
+                  )
+                )
+              ]
+            )
+          )
+        ]
+      )
+    );
+  }
+}
