@@ -17,7 +17,12 @@ class RepositorioRegistro private constructor(contexto: Context) {
 
     private val baseDatos = BaseDatos(contexto.applicationContext)
 
-    suspend fun insertar(
+    /**
+     * Inserción síncrona para usarla desde el servicio tras responder a la llamada.
+     * El enmascarado se aplica AQUÍ con [Enmascarar.numero]; la columna
+     * [BaseDatos.COL_REG_NUMERO] nunca recibe el número completo.
+     */
+    fun insertarSincrono(
         numero: String,
         decision: Accion,
         reglaId: Long?,
@@ -26,7 +31,7 @@ class RepositorioRegistro private constructor(contexto: Context) {
         reglaPrioridad: Int?,
         motivo: String?,
         origen: OrigenLlamada
-    ) = withContext(Dispatchers.IO) {
+    ): Long {
         val valores = ContentValues().apply {
             put(BaseDatos.COL_REG_FECHA, System.currentTimeMillis())
             put(BaseDatos.COL_REG_NUMERO, Enmascarar.numero(numero))
@@ -38,7 +43,20 @@ class RepositorioRegistro private constructor(contexto: Context) {
             put(BaseDatos.COL_REG_MOTIVO, motivo)
             put(BaseDatos.COL_REG_ORIGEN, origen.name)
         }
-        baseDatos.writableDatabase.insert(BaseDatos.TABLA_REGISTRO, null, valores)
+        return baseDatos.writableDatabase.insert(BaseDatos.TABLA_REGISTRO, null, valores)
+    }
+
+    suspend fun insertar(
+        numero: String,
+        decision: Accion,
+        reglaId: Long?,
+        reglaPatron: String?,
+        reglaTipo: TipoRegla?,
+        reglaPrioridad: Int?,
+        motivo: String?,
+        origen: OrigenLlamada
+    ) = withContext(Dispatchers.IO) {
+        insertarSincrono(numero, decision, reglaId, reglaPatron, reglaTipo, reglaPrioridad, motivo, origen)
     }
 
     suspend fun borrarMasAntiguosDe(dias: Int = 30) = withContext(Dispatchers.IO) {

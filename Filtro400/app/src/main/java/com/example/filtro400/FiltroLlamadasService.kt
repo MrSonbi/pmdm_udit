@@ -5,22 +5,17 @@ import android.telecom.CallScreeningService
 import android.util.Log
 import com.example.filtro400.data.RepositorioReglas
 import com.example.filtro400.datos.Preferencias
+import com.example.filtro400.modelo.Accion
 import com.example.filtro400.motor.Decision
 import com.example.filtro400.motor.MotorFiltrado
 import com.example.filtro400.registro.OrigenLlamada
 import com.example.filtro400.registro.RepositorioRegistro
 import com.example.filtro400.util.Enmascarar
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 // CallScreeningService: Android nos avisa de cada llamada entrante
 // ANTES de que suene, y nosotros decidimos qué hacer con ella.
 // Solo funciona con números que NO están en la agenda del usuario.
 class FiltroLlamadasService : CallScreeningService() {
-
-    private val alcance = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onScreenCall(callDetails: Call.Details) {
         var bloquear = false
@@ -70,6 +65,7 @@ class FiltroLlamadasService : CallScreeningService() {
         // Loguear/registrar va DESPUÉS de responder, dentro de try/catch.
         // Nunca el número completo: un teléfono es un dato personal.
         // El ajuste "guardar registro" se lee de SharedPreferences.
+        // Inserción síncrona para no perder el registro si el sistema desvincula el servicio.
         if (esEntrante) {
             try {
                 Log.d(
@@ -83,20 +79,19 @@ class FiltroLlamadasService : CallScreeningService() {
             try {
                 if (Preferencias.guardarRegistroActivado(applicationContext)) {
                     val dec = decision
-                    alcance.launch {
-                        runCatching {
-                            RepositorioRegistro.obtener(applicationContext).insertar(
-                                numero = numero,
-                                decision = if (bloquear) com.example.filtro400.modelo.Accion.BLOQUEAR else com.example.filtro400.modelo.Accion.PERMITIR,
-                                reglaId = dec?.regla?.id,
-                                reglaPatron = dec?.regla?.patron,
-                                reglaTipo = dec?.regla?.tipo,
-                                reglaPrioridad = dec?.regla?.prioridad,
-                                motivo = dec?.motivo,
-                                origen = OrigenLlamada.REAL
-                            )
-                        }
-                    }
+                    val accionRegistro = if (bloquear) Accion.BLOQUEAR else Accion.PERMITIR
+                    // Inserción síncrona tras enviar la respuesta: una sola fila.
+                    // Un fallo no afecta a la decisión.
+                    RepositorioRegistro.obtener(applicationContext).insertarSincrono(
+                        numero = numero,
+                        decision = accionRegistro,
+                        reglaId = dec?.regla?.id,
+                        reglaPatron = dec?.regla?.patron,
+                        reglaTipo = dec?.regla?.tipo,
+                        reglaPrioridad = dec?.regla?.prioridad,
+                        motivo = dec?.motivo,
+                        origen = OrigenLlamada.REAL
+                    )
                 }
             } catch (t: Throwable) {
                 // Un fallo de registro no puede afectar a la decisión.
@@ -104,4 +99,5 @@ class FiltroLlamadasService : CallScreeningService() {
         }
     }
 }
+
 
