@@ -1,5 +1,7 @@
 package com.example.filtro400
 
+import com.example.filtro400.modelo.Accion
+import com.example.filtro400.modelo.TipoRegla
 import com.example.filtro400.motor.ValidacionReglas
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

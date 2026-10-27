@@ -3,6 +3,10 @@ package com.example.filtro400.data
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
+import com.example.filtro400.modelo.Accion
+import com.example.filtro400.modelo.Regla
+import com.example.filtro400.modelo.TipoRegla
+import com.example.filtro400.motor.ValidacionReglas
 
 /**
  * Único punto de acceso a la tabla `reglas`.
@@ -11,9 +15,9 @@ import android.database.Cursor
  * porque viven en el mismo proceso. Así el servicio NO consulta SQLite en cada
  * llamada: lee una copia inmutable de las reglas activas que está en memoria.
  *
- * La copia se carga la primera vez que se pide (el proceso puede arrancar solo
- * porque entra una llamada) y se refresca después de cada alta, edición, baja
- * o cambio de estado. El acceso a la BD desde la UI se hace en Dispatchers.IO.
+ * La copia se carga la primera vez que se pide y se refresca después de cada
+ * alta, edición, baja o cambio de estado. El acceso a la BD desde la UI se
+ * hace en Dispatchers.IO.
  */
 class RepositorioReglas private constructor(contexto: Context) {
 
@@ -54,19 +58,73 @@ class RepositorioReglas private constructor(contexto: Context) {
         }
     }
 
-    fun insertar(patron: String, etiqueta: String?): Long {
+    /**
+     * Alta de regla con los campos nuevos de la Fase 3.
+     *
+     * Si [prioridad] es null o viene fuera de rango (aunque la UI debe validar),
+     * se aplica la prioridad por defecto según [accion]: PERMITIR -> 100, BLOQUEAR -> 0.
+     */
+    fun insertar(
+        patron: String,
+        etiqueta: String?,
+        tipo: TipoRegla = TipoRegla.PREFIJO,
+        accion: Accion = Accion.BLOQUEAR,
+        prioridad: Int? = null
+    ): Long {
+        val prioridadFinal = prioridad?.takeIf { it in 0..100 } ?: ValidacionReglas.prioridadPorDefecto(accion)
         val valores = ContentValues().apply {
             put(BaseDatos.COL_PATRON, patron)
             put(BaseDatos.COL_ETIQUETA, etiquetaLimpia(etiqueta))
             put(BaseDatos.COL_ACTIVA, 1)
             put(BaseDatos.COL_CREADA_EN, System.currentTimeMillis())
+            put(BaseDatos.COL_TIPO, tipo.name)
+            put(BaseDatos.COL_ACCION, accion.name)
+            put(BaseDatos.COL_PRIORIDAD, prioridadFinal)
         }
         val id = baseDatos.writableDatabase.insertOrThrow(BaseDatos.TABLA_REGLAS, null, valores)
         refrescarCache()
         return id
     }
 
+    /**
+     * Versión compatible con el código que solo conocía patrón/etiqueta.
+     * Conserva los valores existentes para tipo/acción/prioridad si se llama así.
+     */
+    fun insertar(patron: String, etiqueta: String?): Long {
+        // Mantenemos compatibilidad: usamos valores por defecto coherentes con
+        // el comportamiento histórico (prefijo + bloquear). Si se desea cambiar
+        // acción/tipo/prioridad hay que usar la sobrecarga completa.
+        return insertar(patron = patron, etiqueta = etiqueta, tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR)
+    }
+
+    fun actualizar(
+        id: Long,
+        patron: String,
+        etiqueta: String?,
+        tipo: TipoRegla,
+        accion: Accion,
+        prioridad: Int
+    ) {
+        val prioridadFinal = if (prioridad in 0..100) prioridad else ValidacionReglas.prioridadPorDefecto(accion)
+        val valores = ContentValues().apply {
+            put(BaseDatos.COL_PATRON, patron)
+            put(BaseDatos.COL_ETIQUETA, etiquetaLimpia(etiqueta))
+            put(BaseDatos.COL_TIPO, tipo.name)
+            put(BaseDatos.COL_ACCION, accion.name)
+            put(BaseDatos.COL_PRIORIDAD, prioridadFinal)
+        }
+        baseDatos.writableDatabase.update(
+            BaseDatos.TABLA_REGLAS,
+            valores,
+            "${BaseDatos.COL_ID} = ?",
+            arrayOf(id.toString())
+        )
+        refrescarCache()
+    }
+
     fun actualizar(id: Long, patron: String, etiqueta: String?) {
+        // Actualización parcial para no romper llamadas existentes: solo se
+        // actualizan patrón y etiqueta, el resto se conserva tal como esté.
         val valores = ContentValues().apply {
             put(BaseDatos.COL_PATRON, patron)
             put(BaseDatos.COL_ETIQUETA, etiquetaLimpia(etiqueta))
@@ -128,15 +186,38 @@ class RepositorioReglas private constructor(contexto: Context) {
         val indiceEtiqueta = cursor.getColumnIndexOrThrow(BaseDatos.COL_ETIQUETA)
         val indiceActiva = cursor.getColumnIndexOrThrow(BaseDatos.COL_ACTIVA)
         val indiceCreadaEn = cursor.getColumnIndexOrThrow(BaseDatos.COL_CREADA_EN)
+        val indiceTipo = cursor.getColumnIndex(BaseDatos.COL_TIPO)
+        val indiceAccion = cursor.getColumnIndex(BaseDatos.COL_ACCION)
+        val indicePrioridad = cursor.getColumnIndex(BaseDatos.COL_PRIORIDAD)
 
         val reglas = ArrayList<Regla>(cursor.count)
         while (cursor.moveToNext()) {
+            val tipo = if (indiceTipo >= 0 && !cursor.isNull(indiceTipo)) {
+                TipoRegla.valueOf(cursor.getString(indiceTipo))
+            } else {
+                TipoRegla.PREFIJO
+            }
+            val accion = if (indiceAccion >= 0 && !cursor.isNull(indiceAccion)) {
+                Accion.valueOf(cursor.getString(indiceAccion))
+            } else {
+                Accion.BLOQUEAR
+            }
+            val prioridad = if (indicePrioridad >= 0 && !cursor.isNull(indicePrioridad)) {
+                val valor = cursor.getInt(indicePrioridad)
+                if (valor in 0..100) valor else ValidacionReglas.prioridadPorDefecto(accion)
+            } else {
+                ValidacionReglas.prioridadPorDefecto(accion)
+            }
+
             reglas += Regla(
                 id = cursor.getLong(indiceId),
                 patron = cursor.getString(indicePatron),
                 etiqueta = if (cursor.isNull(indiceEtiqueta)) null else cursor.getString(indiceEtiqueta),
                 activa = cursor.getInt(indiceActiva) == 1,
-                creadaEn = cursor.getLong(indiceCreadaEn)
+                creadaEn = cursor.getLong(indiceCreadaEn),
+                tipo = tipo,
+                accion = accion,
+                prioridad = prioridad
             )
         }
         return reglas
@@ -158,3 +239,4 @@ class RepositorioReglas private constructor(contexto: Context) {
         }
     }
 }
+

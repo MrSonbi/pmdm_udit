@@ -44,7 +44,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.filtro400.ReglaBloqueo
-import com.example.filtro400.data.Regla
+import com.example.filtro400.modelo.Regla
 import com.example.filtro400.data.RepositorioReglas
 import com.example.filtro400.motor.Decision
 import com.example.filtro400.motor.MotorFiltrado

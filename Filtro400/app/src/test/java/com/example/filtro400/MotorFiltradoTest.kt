@@ -1,7 +1,8 @@
 package com.example.filtro400
 
-import com.example.filtro400.data.Regla
-import com.example.filtro400.motor.Accion
+import com.example.filtro400.modelo.Accion
+import com.example.filtro400.modelo.Regla
+import com.example.filtro400.modelo.TipoRegla
 import com.example.filtro400.motor.MotorFiltrado
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -16,8 +17,18 @@ class MotorFiltradoTest {
     private fun regla(
         patron: String,
         activa: Boolean = true,
-        id: Long = 1L
-    ): Regla = Regla(id = id, patron = patron, activa = activa)
+        id: Long = 1L,
+        tipo: TipoRegla = TipoRegla.PREFIJO,
+        accion: Accion = Accion.BLOQUEAR,
+        prioridad: Int = 0
+    ): Regla = Regla(
+        id = id,
+        patron = patron,
+        activa = activa,
+        tipo = tipo,
+        accion = accion,
+        prioridad = prioridad
+    )
 
     @Test
     fun reglaActivaBloquea() {
