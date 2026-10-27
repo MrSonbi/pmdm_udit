@@ -21,7 +21,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +36,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,38 +48,50 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.filtro400.ReglaBloqueo
-import com.example.filtro400.modelo.Regla
 import com.example.filtro400.data.RepositorioReglas
+import com.example.filtro400.datos.Preferencias
+import com.example.filtro400.modelo.Regla
 import com.example.filtro400.motor.Decision
 import com.example.filtro400.motor.MotorFiltrado
+import com.example.filtro400.registro.RepositorioRegistro
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Pantalla principal de la Fase 2:
- * - estado del rol de filtrado,
- * - probador que usa el mismo motor que el servicio,
- * - lista de prefijos con CRUD y switch de activación.
+ * Pantalla con navegación por pestañas: Inicio, Reglas, Registro/Ajustes.
  */
 @Composable
 fun PantallaInicio() {
     val contexto = LocalContext.current
     val repositorio = remember { RepositorioReglas.obtener(contexto.applicationContext) }
+    val repositorioRegistro = remember { RepositorioRegistro.obtener(contexto.applicationContext) }
     val alcance = rememberCoroutineScope()
     val roleManager = remember { contexto.getSystemService(RoleManager::class.java) }
+
+    var pestana by rememberSaveable { mutableIntStateOf(0) }
 
     var filtroActivo by remember {
         mutableStateOf(roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING))
     }
 
-    // Si el usuario cambia el rol desde Ajustes del sistema y vuelve a la app,
-    // ON_RESUME vuelve a preguntar a Android para que la pantalla no mienta.
+    // Borrado automático de registros de más de 30 días al abrir la app, en segundo plano.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching { repositorioRegistro.borrarMasAntiguosDe(30) }
+        }
+    }
+
+    var guardarRegistro by rememberSaveable {
+        mutableStateOf(Preferencias.guardarRegistroActivado(contexto))
+    }
+
     val cicloVida = LocalLifecycleOwner.current
     DisposableEffect(cicloVida) {
         val observador = LifecycleEventObserver { _, evento ->
             if (evento == Lifecycle.Event.ON_RESUME) {
                 filtroActivo = roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
+                guardarRegistro = Preferencias.guardarRegistroActivado(contexto)
             }
         }
         cicloVida.lifecycle.addObserver(observador)
@@ -96,8 +112,6 @@ fun PantallaInicio() {
     var numeroPrueba by remember { mutableStateOf("") }
     var resultadoPrueba by remember { mutableStateOf<Decision?>(null) }
 
-    // La BD se consulta fuera del hilo principal. `recarga` se incrementa después
-    // de cada cambio para volver a leer la lista ya actualizada.
     LaunchedEffect(recarga) {
         cargando = true
         val resultado = withContext(Dispatchers.IO) {
@@ -107,7 +121,6 @@ fun PantallaInicio() {
         resultado.onSuccess { lista ->
             reglas = lista
             errorCarga = null
-            // Si cambian las reglas, el resultado anterior del probador ya no vale.
             resultadoPrueba = null
         }.onFailure { fallo ->
             errorCarga = "No se pudieron cargar las reglas: ${fallo.message ?: "error desconocido"}"
@@ -117,6 +130,7 @@ fun PantallaInicio() {
     var dialogoAbierto by remember { mutableStateOf(false) }
     var reglaEnEdicion by remember { mutableStateOf<Regla?>(null) }
     var reglaAEliminar by remember { mutableStateOf<Regla?>(null) }
+    var mostrarConfirmacionBorrarRegistro by remember { mutableStateOf(false) }
 
     fun ejecutarAccion(accion: suspend () -> Unit) {
         alcance.launch {
@@ -131,129 +145,229 @@ fun PantallaInicio() {
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            TarjetaEstado(
-                filtroActivo = filtroActivo,
-                alActivar = {
-                    val intent = roleManager.createRequestRoleIntent(
-                        RoleManager.ROLE_CALL_SCREENING
-                    )
-                    lanzadorRol.launch(intent)
-                }
-            )
-        }
-
-        item {
-            TarjetaProbador(
-                numero = numeroPrueba,
-                alCambiarNumero = {
-                    numeroPrueba = it
-                    resultadoPrueba = null
-                },
-                resultado = resultadoPrueba,
-                alProbar = {
-                    alcance.launch {
-                        // Mismo repositorio y mismo motor que usa el servicio.
-                        val consulta = withContext(Dispatchers.IO) {
-                            runCatching { repositorio.reglasActivas() }
-                        }
-                        consulta.onSuccess { reglasActivas ->
-                            resultadoPrueba = MotorFiltrado.evaluar(numeroPrueba, reglasActivas)
-                        }.onFailure { fallo ->
-                            mensajeAccion = "No se pudo probar el número: " +
-                                (fallo.message ?: "error desconocido")
-                        }
-                    }
-                }
-            )
-        }
-
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Prefijos bloqueados",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = pestana == 0,
+                    onClick = { pestana = 0 },
+                    icon = {},
+                    label = { Text("Inicio") }
                 )
-                Text(
-                    text = "Se bloquea cualquier llamada que empiece por uno de estos patrones.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                NavigationBarItem(
+                    selected = pestana == 1,
+                    onClick = { pestana = 1 },
+                    icon = {},
+                    label = { Text("Reglas") }
                 )
-                Button(onClick = {
-                    reglaEnEdicion = null
-                    dialogoAbierto = true
-                }) {
-                    Text("Añadir prefijo")
-                }
+                NavigationBarItem(
+                    selected = pestana == 2,
+                    onClick = { pestana = 2 },
+                    icon = {},
+                    label = { Text("Registro") }
+                )
             }
         }
-
-        if (errorCarga != null || mensajeAccion != null) {
-            item {
-                Card {
-                    Text(
-                        text = errorCarga ?: mensajeAccion.orEmpty(),
-                        modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-
-        if (cargando) {
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
+    ) { paddingValores ->
+        when (pestana) {
+            0 -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValores),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                }
-            }
-        }
-
-        if (!cargando && reglas.isEmpty()) {
-            item {
-                Card {
-                    Text(
-                        text = "No hay prefijos guardados. Ahora mismo se permitirían todas las llamadas.",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
-        }
-
-        items(reglas, key = { it.id }) { regla ->
-            TarjetaRegla(
-                regla = regla,
-                alCambiarActiva = { activa ->
-                    ejecutarAccion {
-                        withContext(Dispatchers.IO) {
-                            repositorio.cambiarActiva(regla.id, activa)
+                    item {
+                        TarjetaEstado(
+                            filtroActivo = filtroActivo,
+                            alActivar = {
+                                val intent = roleManager.createRequestRoleIntent(
+                                    RoleManager.ROLE_CALL_SCREENING
+                                )
+                                lanzadorRol.launch(intent)
+                            }
+                        )
+                    }
+                    item {
+                        TarjetaProbador(
+                            numero = numeroPrueba,
+                            alCambiarNumero = {
+                                numeroPrueba = it
+                                resultadoPrueba = null
+                            },
+                            resultado = resultadoPrueba,
+                            alProbar = {
+                                alcance.launch {
+                                    val consulta = withContext(Dispatchers.IO) {
+                                        runCatching { repositorio.reglasActivas() }
+                                    }
+                                    consulta.onSuccess { reglasActivas ->
+                                        resultadoPrueba = MotorFiltrado.evaluar(numeroPrueba, reglasActivas)
+                                    }.onFailure { fallo ->
+                                        mensajeAccion = "No se pudo probar el número: " +
+                                            (fallo.message ?: "error desconocido")
+                                    }
+                                }
+                            }
+                        )
+                    }
+                    if (errorCarga != null || mensajeAccion != null) {
+                        item {
+                            Card {
+                                Text(
+                                    text = errorCarga ?: mensajeAccion.orEmpty(),
+                                    modifier = Modifier.padding(16.dp),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
-                },
-                alEditar = {
-                    reglaEnEdicion = regla
-                    dialogoAbierto = true
-                },
-                alEliminar = { reglaAEliminar = regla }
-            )
-        }
+                    item {
+                        Text(
+                            text = "Limitación de Android: solo llegan al filtro las llamadas de números " +
+                                "que NO están en la agenda. Los contactos no pasan por esta app.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
-        item {
-            Text(
-                text = "Limitación de Android: solo llegan al filtro las llamadas de números " +
-                    "que NO están en la agenda. Los contactos no pasan por esta app.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            1 -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValores),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Reglas",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Se evalúan por prioridad, tipo y acción. La lista blanca puede ganar al bloqueo.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(onClick = {
+                                reglaEnEdicion = null
+                                dialogoAbierto = true
+                            }) {
+                                Text("Añadir regla")
+                            }
+                        }
+                    }
+                    if (errorCarga != null || mensajeAccion != null) {
+                        item {
+                            Card {
+                                Text(
+                                    text = errorCarga ?: mensajeAccion.orEmpty(),
+                                    modifier = Modifier.padding(16.dp),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                    if (cargando) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                            }
+                        }
+                    }
+                    if (!cargando && reglas.isEmpty()) {
+                        item {
+                            Card {
+                                Text(
+                                    text = "No hay reglas guardadas. Ahora mismo se permitirían todas las llamadas.",
+                                    modifier = Modifier.padding(16.dp),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                    }
+                    items(reglas, key = { it.id }) { regla ->
+                        TarjetaRegla(
+                            regla = regla,
+                            alCambiarActiva = { activa ->
+                                ejecutarAccion {
+                                    withContext(Dispatchers.IO) {
+                                        repositorio.cambiarActiva(regla.id, activa)
+                                    }
+                                }
+                            },
+                            alEditar = {
+                                reglaEnEdicion = regla
+                                dialogoAbierto = true
+                            },
+                            alEliminar = { reglaAEliminar = regla }
+                        )
+                    }
+                }
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValores),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Registro y ajustes",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Card {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Guardar registro")
+                                            Text(
+                                                text = "Activo por defecto. Solo se guarda el número enmascarado.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Switch(
+                                            checked = guardarRegistro,
+                                            onCheckedChange = { activar ->
+                                                guardarRegistro = activar
+                                                Preferencias.setGuardarRegistro(contexto, activar)
+                                            }
+                                        )
+                                    }
+                                    TextButton(onClick = { mostrarConfirmacionBorrarRegistro = true }) {
+                                        Text("Borrar registro")
+                                    }
+                                    Text(
+                                        text = "Se borran automáticamente los registros de más de 30 días al abrir la app.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -268,12 +382,12 @@ fun PantallaInicio() {
                 dialogoAbierto = false
                 reglaEnEdicion = null
             },
-            alGuardar = { patron, etiqueta ->
+            alGuardar = { patron, etiqueta, tipo, accion, prioridad ->
                 withContext(Dispatchers.IO) {
                     if (reglaActual == null) {
-                        repositorio.insertar(patron, etiqueta)
+                        repositorio.insertar(patron, etiqueta, tipo, accion, prioridad)
                     } else {
-                        repositorio.actualizar(reglaActual.id, patron, etiqueta)
+                        repositorio.actualizar(reglaActual.id, patron, etiqueta, tipo, accion, prioridad)
                     }
                 }
                 recarga++
@@ -284,7 +398,7 @@ fun PantallaInicio() {
     reglaAEliminar?.let { regla ->
         AlertDialog(
             onDismissRequest = { reglaAEliminar = null },
-            title = { Text("Eliminar prefijo") },
+            title = { Text("Eliminar regla") },
             text = {
                 Text(
                     "¿Seguro que quieres eliminar la regla «${regla.patron}»? " +
@@ -305,6 +419,31 @@ fun PantallaInicio() {
             },
             dismissButton = {
                 TextButton(onClick = { reglaAEliminar = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (mostrarConfirmacionBorrarRegistro) {
+        AlertDialog(
+            onDismissRequest = { mostrarConfirmacionBorrarRegistro = false },
+            title = { Text("Borrar registro") },
+            text = { Text("¿Seguro que quieres borrar todo el registro de actividad? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    mostrarConfirmacionBorrarRegistro = false
+                    alcance.launch {
+                        withContext(Dispatchers.IO) {
+                            runCatching { repositorioRegistro.borrarTodos() }
+                        }
+                    }
+                }) {
+                    Text("Borrar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { mostrarConfirmacionBorrarRegistro = false }) {
                     Text("Cancelar")
                 }
             }
@@ -369,7 +508,7 @@ private fun TarjetaProbador(
             OutlinedTextField(
                 value = numero,
                 onValueChange = alCambiarNumero,
-                label = { Text("Ej. +34 400 123 456") },
+                label = { Text("Ej. +34 400 555 123") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
@@ -442,15 +581,22 @@ private fun TarjetaRegla(
                 Switch(checked = regla.activa, onCheckedChange = alCambiarActiva)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = if (regla.activa) "Activa" else "Inactiva",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (regla.activa) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
+                Column {
+                    Text(
+                        text = if (regla.activa) "Activa" else "Inactiva",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (regla.activa) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Text(
+                        text = "${regla.tipo.name} • ${regla.accion.name} • prio ${regla.prioridad}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = alEditar) {
                     Text("Editar")

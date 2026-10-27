@@ -108,4 +108,59 @@ class MotorFiltradoFase3Test {
         assertEquals(Accion.PERMITIR, decision.accion)
         assertNull(decision.regla)
     }
+
+    @Test
+    fun reglaInactivaConCamposNuevosNoAplica() {
+        val decision = MotorFiltrado.evaluar(
+            "611222333",
+            listOf(regla(patron = "611", tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = 50, activa = false))
+        )
+        assertEquals(Accion.PERMITIR, decision.accion)
+        assertNull(decision.regla)
+    }
+
+    @Test
+    fun listaBlancaInactivaNoPermite() {
+        // Aunque sea lista blanca, si está inactiva no debe aplicarse.
+        val decision = MotorFiltrado.evaluar(
+            "611222333",
+            listOf(regla(patron = "611222333", tipo = TipoRegla.NUMERO, accion = Accion.PERMITIR, prioridad = 100, activa = false))
+        )
+        assertEquals(Accion.PERMITIR, decision.accion)
+        assertNull(decision.regla)
+    }
+
+    @Test
+    fun prefijoDePrioridadAltaGanaANumeroDePrioridadBaja() {
+        val decision = MotorFiltrado.evaluar(
+            "700123456",
+            listOf(
+                regla(patron = "700123456", tipo = TipoRegla.NUMERO, accion = Accion.BLOQUEAR, prioridad = 0, id = 1L),
+                regla(patron = "700", tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = 10, id = 2L)
+            )
+        )
+        assertEquals(Accion.BLOQUEAR, decision.accion)
+        assertEquals("700", decision.regla?.patron)
+    }
+
+    @Test
+    fun numeroFicticioConRegla400PorDefectoSeBloquea() {
+        val decision = MotorFiltrado.evaluar("+34 400 555 123", listOf(regla(patron = "400")))
+        assertEquals(Accion.BLOQUEAR, decision.accion)
+        assertEquals("400", decision.regla?.patron)
+    }
+
+    @Test
+    fun numeroFicticioConPermitirExactoPasa() {
+        val decision = MotorFiltrado.evaluar(
+            "400555123",
+            listOf(
+                regla(patron = "400", tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = 0, id = 1L),
+                regla(patron = "400555123", tipo = TipoRegla.NUMERO, accion = Accion.PERMITIR, prioridad = 100, id = 2L)
+            )
+        )
+        assertEquals(Accion.PERMITIR, decision.accion)
+        assertEquals("400555123", decision.regla?.patron)
+    }
 }
+
