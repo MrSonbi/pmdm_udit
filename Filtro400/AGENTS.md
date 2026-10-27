@@ -49,3 +49,20 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`.
 ## Entregables
 - Código compilando, APK debug y `docs/FASE<N>.md` con decisiones, dificultades, pruebas
   reales (comando + salida) y limitaciones.
+
+## Estado de la Fase 3
+- **Pasos hechos y commiteados:** Pasos 1-6 (migración v1→v2, `modelo/`, motor v3, validación/CRUD, navegación con pestañas, registro/ajustes).
+- **En curso / escritos sin verificar:** Pasos 7-8 (estadísticas, pestañas Estadísticas y Ajustes, CSV con SAF) en el último commit "WIP fase3 (7-8)". El último comando falló; **sin verificar aún**.
+- **Pendientes:** Verificar y estabilizar pasos 7-8. **No empezar paso 10 hasta que se indique.**
+- **Condiciones vigentes:**
+  - Windows PowerShell (no usar `tail`, `head` ni `grep`; usar `Select-Object -Last ...` o `Select-String`).
+  - **No usar emulador ni `connectedDebugAndroidTest` hasta el paso 10.**
+  - **No ejecutar git.**
+  - Sin dependencias nuevas, sin subir AGP/Kotlin/Compose/Gradle. `minSdk = 29`.
+  - SQLite nativo con `SQLiteOpenHelper`; ajustes en `SharedPreferences`. Sin Room/KSP/kapt.
+  - **Límites del CSV (1 MB, 5000 filas)**.
+  - **Enmascarado obligatorio del número** (`util.Enmascarar`); nunca loguear el número completo.
+  - **Registro síncrono tras responder** (el servicio responde primero y registra después en `try/catch`).
+  - **Los tests instrumentados nunca usan filtro400.db**.
+  - `onScreenCall`: fail-open; responder una sola vez antes de loguear/registrar.
+  - `ReglaBloqueo.normalizar()` es la única normalización; `MotorFiltrado.evaluar()` es puro (sin Android).
