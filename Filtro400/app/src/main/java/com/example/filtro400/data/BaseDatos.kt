@@ -23,10 +23,23 @@ class BaseDatos(
     nombreBd: String = NOMBRE_BD
 ) : SQLiteOpenHelper(
     contexto.applicationContext,
-    nombreBd,
+    if (instancia != null && nombreBd == NOMBRE_BD) NOMBRE_BD else if (instancia != null && nombreBd != NOMBRE_BD) {
+        // Si ya existe una instancia, ignoramos el nombreBd solicitado para mantener el singleton
+        instancia?.databaseName ?: nombreBd
+    } else {
+        nombreBd
+    },
     null,
     VERSION_BD
 ) {
+
+    init {
+        synchronized(BaseDatos::class.java) {
+            if (instancia == null) {
+                instancia = this
+            }
+        }
+    }
 
     /**
      * Instalación nueva: se crea directamente el esquema v2 completo.
@@ -88,6 +101,9 @@ class BaseDatos(
     }
 
     companion object {
+        @Volatile
+        private var instancia: BaseDatos? = null
+
         const val VERSION_BD = 2
         const val NOMBRE_BD = "filtro400.db"
 

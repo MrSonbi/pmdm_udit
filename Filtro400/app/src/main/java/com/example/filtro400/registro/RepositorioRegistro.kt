@@ -13,9 +13,16 @@ import kotlinx.coroutines.withContext
  * Acceso a la tabla `registro`. Se usa desde el servicio (tras responder)
  * y desde la UI para listar/borrar.
  */
-class RepositorioRegistro private constructor(contexto: Context) {
+class RepositorioRegistro(
+    contexto: Context? = null,
+    baseDatosInyectada: BaseDatos? = null
+) {
 
-    private val baseDatos = BaseDatos(contexto.applicationContext)
+    private val baseDatos: BaseDatos = when {
+        baseDatosInyectada != null -> baseDatosInyectada
+        contexto != null -> BaseDatos(contexto.applicationContext)
+        else -> throw IllegalArgumentException("Se necesita contexto o BaseDatos")
+    }
 
     /**
      * Inserción síncrona para usarla desde el servicio tras responder a la llamada.
@@ -86,6 +93,16 @@ class RepositorioRegistro private constructor(contexto: Context) {
             return instancia ?: synchronized(this) {
                 instancia ?: RepositorioRegistro(contexto.applicationContext).also { instancia = it }
             }
+        }
+
+        @JvmStatic
+        fun crear(contexto: Context, baseDatos: BaseDatos): RepositorioRegistro {
+            return RepositorioRegistro(contexto.applicationContext, baseDatos)
+        }
+
+        @JvmStatic
+        fun crear(baseDatos: BaseDatos): RepositorioRegistro {
+            return RepositorioRegistro(null, baseDatos)
         }
     }
 }

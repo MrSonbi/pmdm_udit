@@ -33,13 +33,15 @@ class RepositorioRegistroTest {
         contexto = InstrumentationRegistry.getInstrumentation().targetContext
         contexto.deleteDatabase(nombreBd)
         baseDatos = BaseDatos(contexto, nombreBd)
-        // El repositorio usa su propio BaseDatos con contexto de aplicación; para
-        // este test comprobamos directamente la BD creada con nombre inyectable.
+        repositorio = RepositorioRegistro(contexto, baseDatos)
     }
 
     @After
     fun limpiar() {
-        baseDatos.close()
+        try {
+            baseDatos.close()
+        } catch (_: Exception) {
+        }
         contexto.deleteDatabase(nombreBd)
     }
 

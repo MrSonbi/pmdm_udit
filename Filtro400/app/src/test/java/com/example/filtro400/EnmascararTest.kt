@@ -23,4 +23,12 @@ class EnmascararTest {
     fun numeroVacioQuedaTotalmenteOculto() {
         assertEquals("***", Enmascarar.numero(""))
     }
+
+    @Test
+    fun enmascaradoExactoSegunEspecificacion() {
+        assertEquals("400123***", Enmascarar.numero("+34 400 123 456"))
+        assertEquals("400123***", Enmascarar.numero("400123456"))
+        assertEquals("+44791***", Enmascarar.numero("+447911123456"))
+        assertEquals("12***", Enmascarar.numero("1234"))
+    }
 }
