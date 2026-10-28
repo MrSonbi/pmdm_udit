@@ -55,7 +55,7 @@ object PlanificadorImportacion {
 
                 val existeEnBd = mapaPorPatronNormalizado.containsKey(patronNormalizadoFila)
 
-                if (!validacion.esValida && !existeEnBd) {
+                if (!validacion.esValida) {
                     operaciones.add(OperacionCsv.Error(numeroLinea, validacion.error ?: "inválido"))
                     continue
                 }
@@ -66,11 +66,21 @@ object PlanificadorImportacion {
 
                 if (existeEnBd) {
                     val reglaExistente = mapaPorPatronNormalizado[patronNormalizadoFila]!!
+                    val etiquetaCsvLimpia = fila.etiqueta?.trim()?.ifEmpty { null }
+                    val etiquetaNueva = if (etiquetaCsvLimpia == null && fila.etiqueta?.trim()?.isEmpty() == true) {
+                        reglaExistente.etiqueta
+                    } else if (fila.etiqueta == null) {
+                        reglaExistente.etiqueta
+                    } else {
+                        etiquetaCsvLimpia
+                    }
+                    val activaNueva = activa ?: reglaExistente.activa
+                    val prioridadParaActualizar = if (fila.prioridad == null) reglaExistente.prioridad else prioridadParaGuardar
                     if (reglaExistente.tipo == fila.tipo &&
                         reglaExistente.accion == fila.accion &&
-                        reglaExistente.prioridad == prioridadParaGuardar &&
-                        reglaExistente.etiqueta == (fila.etiqueta?.trim()?.ifEmpty { null }) &&
-                        reglaExistente.activa == (activa ?: reglaExistente.activa)
+                        reglaExistente.prioridad == prioridadParaActualizar &&
+                        reglaExistente.etiqueta == etiquetaNueva &&
+                        reglaExistente.activa == activaNueva
                     ) {
                         operaciones.add(OperacionCsv.Omitir(numeroLinea, "sin cambios"))
                         continue
@@ -80,21 +90,22 @@ object PlanificadorImportacion {
                             numeroLineaOriginal = numeroLinea,
                             id = reglaExistente.id,
                             patron = patronParaGuardar,
-                            etiqueta = fila.etiqueta?.trim()?.ifEmpty { null },
+                            etiqueta = etiquetaNueva,
                             tipo = fila.tipo,
                             accion = fila.accion,
-                            prioridad = prioridadParaGuardar,
-                            activa = activa ?: reglaExistente.activa
+                            prioridad = prioridadParaActualizar,
+                            activa = activaNueva
                         )
                     )
                     mapaPorPatronNormalizado[patronNormalizadoFila] = reglaExistente.copy(
                         tipo = fila.tipo,
                         accion = fila.accion,
-                        prioridad = prioridadParaGuardar,
-                        etiqueta = fila.etiqueta?.trim()?.ifEmpty { null },
-                        activa = activa ?: reglaExistente.activa
+                        prioridad = prioridadParaActualizar,
+                        etiqueta = etiquetaNueva,
+                        activa = activaNueva
                     )
                 } else {
+                    val prioridadAlta = fila.prioridad ?: ValidacionReglas.prioridadPorDefecto(fila.accion)
                     operaciones.add(
                         OperacionCsv.Insertar(
                             numeroLineaOriginal = numeroLinea,
@@ -102,7 +113,7 @@ object PlanificadorImportacion {
                             etiqueta = fila.etiqueta?.trim()?.ifEmpty { null },
                             tipo = fila.tipo,
                             accion = fila.accion,
-                            prioridad = prioridadParaGuardar,
+                            prioridad = prioridadAlta,
                             activa = activa ?: true
                         )
                     )
@@ -114,7 +125,7 @@ object PlanificadorImportacion {
                         creadaEn = 0,
                         tipo = fila.tipo,
                         accion = fila.accion,
-                        prioridad = prioridadParaGuardar
+                        prioridad = prioridadAlta
                     )
                     mapaPorPatronNormalizado[patronNormalizadoFila] = nuevaRegla
                 }

@@ -40,16 +40,31 @@ class AplicarPlanTest {
     }
 
     @Test
-    fun aplicarPlanConRollbackSiFallaYUnaSolaRecarga() {
-        // Construimos un repositorio con BD temporal usando reflexión no, mejor instanciamos
-        val repositorio = RepositorioReglas::class.java.getDeclaredConstructor(Context::class.java)
-            .apply { isAccessible = true }
-            .newInstance(contexto.applicationContext)
-        // Reemplazar baseDatos
+    fun aplicarPlanExitoYRollback() {
+        // ÉXITO: contadores correctos y fallo=false
+        val repositorio = RepositorioReglas::class.java.getDeclaredConstructor(Context::class.java).apply { isAccessible = true }.newInstance(contexto.applicationContext)
         val field = RepositorioReglas::class.java.getDeclaredField("baseDatos")
         field.isAccessible = true
         field.set(repositorio, baseDatos)
-        // Forzamos recarga
-        repositorio.listarTodas()
+        val planExito = com.example.filtro400.csv.PlanImportacion(
+            listOf(
+                com.example.filtro400.csv.OperacionCsv.Insertar(1, "611", null, com.example.filtro400.modelo.TipoRegla.PREFIJO, com.example.filtro400.modelo.Accion.BLOQUEAR, 0, true)
+            )
+        )
+        val resExito = repositorio.aplicarPlan(planExito)
+        assertEquals(false, resExito.fallo)
+        assertEquals(1, resExito.anyadidas)
+        assertEquals(0, resExito.actualizadas)
+        assertEquals(0, resExito.omitidas)
+
+        // ROLLBACK: update con 0 filas afectadas debe provocar rollback
+        val planRollback = com.example.filtro400.csv.PlanImportacion(
+            listOf(
+                com.example.filtro400.csv.OperacionCsv.Actualizar(2, 99999, "622", null, com.example.filtro400.modelo.TipoRegla.PREFIJO, com.example.filtro400.modelo.Accion.BLOQUEAR, 0, true)
+            )
+        )
+        val resRollback = repositorio.aplicarPlan(planRollback)
+        assertEquals(true, resRollback.fallo)
+        assertEquals("no se ha cambiado nada", resRollback.mensaje)
     }
 }

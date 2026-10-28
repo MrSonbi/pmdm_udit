@@ -35,6 +35,8 @@ object CsvCodec {
         val lector = BufferedReader(InputStreamReader(streamLimitado, charset))
         var numeroLinea = 0
         var filasProcesadas = 0
+        var delimitadorDetectado: Char? = null
+        var primeraFilaNoVaciaLeida = false
         try {
             while (true) {
                 val l = lector.readLine() ?: break
@@ -46,6 +48,17 @@ object CsvCodec {
                 if (lineaProcesar.isBlank()) {
                     continue
                 }
+                if (!primeraFilaNoVaciaLeida) {
+                    // Detecta el delimitador UNA vez por fichero (primera fila no vacía)
+                    delimitadorDetectado = detectarDelimitador(lineaProcesar)
+                    // Salta la cabecera si la primera fila no vacía tiene "patron" en la primera columna
+                    val camposCabecera = dividirCampos(lineaProcesar, delimitadorDetectado!!)
+                    if (camposCabecera.isNotEmpty() && camposCabecera[0].trim().lowercase() == "patron") {
+                        primeraFilaNoVaciaLeida = true
+                        continue
+                    }
+                    primeraFilaNoVaciaLeida = true
+                }
                 if (lineaProcesar.length > MAX_LINEA_CARACTERES) {
                     errores.add(ResultadoLinea.Error(numeroLinea, "línea demasiado larga"))
                     continue
@@ -54,7 +67,7 @@ object CsvCodec {
                 if (filasProcesadas > MAX_FILAS) {
                     throw LimiteFilasExcedidoException()
                 }
-                val resLinea = parsearSeguro(lineaProcesar, numeroLinea)
+                val resLinea = parsearSeguro(lineaProcesar, numeroLinea, delimitadorDetectado)
                 when (resLinea) {
                     is ResultadoLinea.Ok -> filasValidas.add(resLinea.fila)
                     is ResultadoLinea.Error -> errores.add(resLinea)
@@ -69,9 +82,9 @@ object CsvCodec {
         return ResultadoParseo(filasValidas, errores.sortedBy { it.numeroLineaOriginal })
     }
 
-    private fun parsearSeguro(linea: String, numeroLinea: Int): ResultadoLinea {
+    private fun parsearSeguro(linea: String, numeroLinea: Int, delimitadorDetectado: Char? = null): ResultadoLinea {
         try {
-            val fila = parsearLinea(linea, numeroLinea)
+            val fila = parsearLinea(linea, numeroLinea, delimitadorDetectado)
             return if (fila == null) {
                 ResultadoLinea.Error(numeroLinea, "fila vacía")
             } else {
@@ -94,21 +107,22 @@ object CsvCodec {
         return LimitadorBytesInputStream(inputStream, MAX_BYTES)
     }
 
-    private fun parsearLinea(linea: String, numeroLinea: Int): FilaCsv? {
+    private fun parsearLinea(linea: String, numeroLinea: Int, delimitadorDetectado: Char? = null): FilaCsv? {
         if (linea.isBlank()) {
             return null
         }
-        val delimitador = detectarDelimitador(linea)
+        val delimitador = delimitadorDetectado ?: detectarDelimitador(linea)
         val campos = dividirCampos(linea, delimitador)
         if (campos.size < 3) {
             throw FilaIncorrectaException(numeroLinea, "Se esperan al menos 3 columnas")
         }
+        // Formato acordado: patron;tipo;accion;prioridad;activa;etiqueta (solo las 3 primeras obligatorias)
         val patron = campos[0].trim()
-        val etiqueta = if (campos.size > 1) campos[1].trim().ifEmpty { null } else null
-        val tipoStr = if (campos.size > 2) campos[2].trim() else ""
-        val accionStr = if (campos.size > 3) campos[3].trim() else ""
-        val prioridadStr = if (campos.size > 4) campos[4].trim() else ""
-        val activaStr = if (campos.size > 5) campos[5].trim().lowercase() else ""
+        val tipoStr = if (campos.size > 1) campos[1].trim() else ""
+        val accionStr = if (campos.size > 2) campos[2].trim() else ""
+        val prioridadStr = if (campos.size > 3) campos[3].trim() else ""
+        val activaStr = if (campos.size > 4) campos[4].trim().lowercase() else ""
+        val etiqueta = if (campos.size > 5) campos[5].trim().ifEmpty { null } else null
 
         val tipo = try {
             TipoRegla.valueOf(tipoStr.uppercase())

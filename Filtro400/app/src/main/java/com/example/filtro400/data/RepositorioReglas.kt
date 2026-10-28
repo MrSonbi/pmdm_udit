@@ -19,9 +19,9 @@ import com.example.filtro400.motor.ValidacionReglas
  * alta, edición, baja o cambio de estado. El acceso a la BD desde la UI se
  * hace en Dispatchers.IO.
  */
-class RepositorioReglas private constructor(contexto: Context) {
+class RepositorioReglas @JvmOverloads constructor(contexto: Context? = null) {
 
-    private val baseDatos = BaseDatos(contexto.applicationContext)
+    private val baseDatos = BaseDatos((contexto ?: throw IllegalArgumentException("contexto requerido")).applicationContext)
 
     // @Volatile: el hilo del servicio y el de la UI ven siempre la última copia.
     @Volatile
@@ -190,12 +190,8 @@ class RepositorioReglas private constructor(contexto: Context) {
     }
 
     fun aplicarPlan(plan: com.example.filtro400.csv.PlanImportacion): com.example.filtro400.csv.ImportadorCsv.ResultadoImportacion {
+        val resumen = com.example.filtro400.csv.ResumidorPlan.resumenDe(plan)
         val writableDb = baseDatos.writableDatabase
-
-        var anyadidas = 0
-        var actualizadas = 0
-        var omitidas = 0
-        val errores = ArrayList<com.example.filtro400.csv.ImportadorCsv.ErrorLinea>()
 
         writableDb.beginTransaction()
         try {
@@ -211,8 +207,7 @@ class RepositorioReglas private constructor(contexto: Context) {
                             put(com.example.filtro400.data.BaseDatos.COL_ACCION, op.accion.name)
                             put(com.example.filtro400.data.BaseDatos.COL_PRIORIDAD, op.prioridad)
                         }
-                        val res = writableDb.insertOrThrow(com.example.filtro400.data.BaseDatos.TABLA_REGLAS, null, valores)
-                        if (res >= 0) anyadidas++
+                        writableDb.insertOrThrow(com.example.filtro400.data.BaseDatos.TABLA_REGLAS, null, valores)
                     }
                     is com.example.filtro400.csv.OperacionCsv.Actualizar -> {
                         val valores = android.content.ContentValues().apply {
@@ -229,14 +224,13 @@ class RepositorioReglas private constructor(contexto: Context) {
                             "${com.example.filtro400.data.BaseDatos.COL_ID} = ?",
                             arrayOf(op.id.toString())
                         )
-                        if (filas >= 0) actualizadas++
+                        if (filas <= 0) {
+                            throw IllegalStateException("no se ha cambiado nada")
+                        }
                     }
                     is com.example.filtro400.csv.OperacionCsv.Omitir -> {
-                        omitidas++
                     }
                     is com.example.filtro400.csv.OperacionCsv.Error -> {
-                        errores.add(com.example.filtro400.csv.ImportadorCsv.ErrorLinea(op.numeroLineaOriginal, op.motivo))
-                        omitidas++
                     }
                 }
             }
@@ -244,12 +238,11 @@ class RepositorioReglas private constructor(contexto: Context) {
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            // rollback implícito al no marcar éxito; no recarga caché
             return com.example.filtro400.csv.ImportadorCsv.ResultadoImportacion(
                 anyadidas = 0,
                 actualizadas = 0,
-                omitidas = plan.operaciones.size,
-                errores = errores,
+                omitidas = 0,
+                errores = resumen.errores,
                 fallo = true,
                 mensaje = "no se ha cambiado nada"
             )
@@ -257,7 +250,8 @@ class RepositorioReglas private constructor(contexto: Context) {
             writableDb.endTransaction()
         }
         refrescarCache()
-        return com.example.filtro400.csv.ImportadorCsv.ResultadoImportacion(anyadidas, actualizadas, omitidas, errores.sortedBy { it.numeroLinea }.take(50) + if (errores.size > 50) listOf(com.example.filtro400.csv.ImportadorCsv.ErrorLinea(0, "y ${errores.size - 50} más")) else emptyList())
+        val erroresFinales = resumen.errores.take(50) + if (resumen.errores.size > 50) listOf(com.example.filtro400.csv.ImportadorCsv.ErrorLinea(0, "y ${resumen.errores.size - 50} más")) else emptyList()
+        return com.example.filtro400.csv.ImportadorCsv.ResultadoImportacion(resumen.anyadidas, resumen.actualizadas, resumen.omitidas, erroresFinales, fallo = false)
     }
 
     companion object {

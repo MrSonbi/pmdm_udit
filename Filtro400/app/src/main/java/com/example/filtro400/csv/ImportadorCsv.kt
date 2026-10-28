@@ -1,6 +1,5 @@
 package com.example.filtro400.csv
 
-import com.example.filtro400.data.BaseDatos
 import com.example.filtro400.data.RepositorioReglas
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -45,14 +44,13 @@ class ImportadorCsv(
             // fusionar errores de parseo y del plan, ordenados por nº de línea
             val todosErrores = (erroresParseo + res.errores).sortedBy { it.numeroLinea }
             return@withContext res.copy(errores = todosErrores.take(50) + if (todosErrores.size > 50) listOf(ErrorLinea(0, "y ${todosErrores.size - 50} más")) else emptyList())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: LimiteTamanoExcedidoException) {
             return@withContext ResultadoImportacion(fallo = true, mensaje = "límite de 1 MB excedido")
         } catch (e: LimiteFilasExcedidoException) {
             return@withContext ResultadoImportacion(fallo = true, mensaje = "límite de 5000 filas excedido")
         } catch (e: Exception) {
-            if (e.message == "no se ha cambiado nada") {
-                return@withContext ResultadoImportacion(fallo = true, mensaje = "no se ha cambiado nada")
-            }
             return@withContext ResultadoImportacion(fallo = true, mensaje = "no se ha cambiado nada")
         }
     }

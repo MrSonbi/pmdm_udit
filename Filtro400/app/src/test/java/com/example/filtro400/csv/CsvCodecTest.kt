@@ -10,7 +10,7 @@ class CsvCodecTest {
 
     @Test
     fun bomYSeparadorPuntoYComa() {
-        val csv = "\uFEFF400;Comerciales;PREFIJO;BLOQUEAR;0\n"
+        val csv = "\uFEFF400;PREFIJO;BLOQUEAR;0;1;Comerciales\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(1, res.filas.size)
         assertEquals(0, res.errores.size)
@@ -18,7 +18,7 @@ class CsvCodecTest {
 
     @Test
     fun separadorComa() {
-        val csv = "400,Comerciales,PREFIJO,BLOQUEAR,0\n"
+        val csv = "400,PREFIJO,BLOQUEAR,0,1,Comerciales\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(1, res.filas.size)
         assertEquals(0, res.errores.size)
@@ -26,7 +26,7 @@ class CsvCodecTest {
 
     @Test
     fun comillasYComasDentroDeEtiqueta() {
-        val csv = "\"400\",\"Etiqueta, con coma\",PREFIJO,BLOQUEAR,0\n"
+        val csv = "\"400\";\"PREFIJO\";\"BLOQUEAR\";\"0\";\"1\";\"Etiqueta, con coma\"\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(1, res.filas.size)
         assertEquals("Etiqueta, con coma", res.filas[0].etiqueta)
@@ -35,7 +35,7 @@ class CsvCodecTest {
 
     @Test
     fun filaConMenosColumnasGeneraErrorSinAbortar() {
-        val csv = "400,etiqueta\n611,eti,PREFIJO,BLOQUEAR,0\n"
+        val csv = "400;etiqueta\n611;PREFIJO;BLOQUEAR;0;1;eti\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(1, res.filas.size)
         assertEquals(1, res.errores.size)
@@ -44,7 +44,7 @@ class CsvCodecTest {
 
     @Test
     fun tipoOAccionDesconocidosGeneraErrorSinAbortar() {
-        val csv = "400,eti,PREFIJO,RARO,0\n611,eti,PREFIJO,BLOQUEAR,0\n"
+        val csv = "400;PREFIJO;RARO;0;1;eti\n611;PREFIJO;BLOQUEAR;0;1;eti\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(1, res.filas.size)
         assertEquals(1, res.errores.size)
@@ -52,7 +52,7 @@ class CsvCodecTest {
 
     @Test
     fun prioridadVaciaAcepta() {
-        val csv = "400,eti,NUMERO,PERMITIR,\n"
+        val csv = "400;NUMERO;PERMITIR;;;\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(1, res.filas.size)
         assertEquals(null, res.filas[0].prioridad)
@@ -60,7 +60,7 @@ class CsvCodecTest {
 
     @Test
     fun prioridad101GeneraErrorSinAbortar() {
-        val csv = "400,eti,PREFIJO,BLOQUEAR,101\n611,eti,PREFIJO,BLOQUEAR,0\n"
+        val csv = "400;PREFIJO;BLOQUEAR;101;1;eti\n611;PREFIJO;BLOQUEAR;0;1;eti\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(1, res.filas.size)
         assertEquals(1, res.errores.size)
@@ -68,7 +68,7 @@ class CsvCodecTest {
 
     @Test
     fun lineaEnBlancoIntermediaConNumeracionCorrecta() {
-        val csv = "400,eti,PREFIJO,BLOQUEAR,0\n\n611,eti2,NUMERO,PERMITIR,\n"
+        val csv = "400;PREFIJO;BLOQUEAR;0;1;eti\n\n611;NUMERO;PERMITIR;;;\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(2, res.filas.size)
         assertEquals(1, res.filas[0].numeroLineaOriginal)
@@ -78,7 +78,7 @@ class CsvCodecTest {
     @Test
     fun lineaDemasiadoLargaGeneraErrorSinAbortar() {
         val larga = "a".repeat(1001)
-        val csv = "$larga,eti,PREFIJO,BLOQUEAR,0\n611,eti,PREFIJO,BLOQUEAR,0\n"
+        val csv = "$larga;PREFIJO;BLOQUEAR;0;1;eti\n611;PREFIJO;BLOQUEAR;0;1;eti\n"
         val res = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
         assertEquals(1, res.filas.size)
         assertEquals(1, res.errores.size)
@@ -86,18 +86,17 @@ class CsvCodecTest {
 
     @Test
     fun extremoAExtremoParseoMasPlan() {
-        val csv = "400,eti,PREFIJO,BLOQUEAR,0\n" + // valida
-                "badtype,eti,PREFIJO,RARO,0\n" + // tipo desconocido
-                "611,eti,PREFIJO,BLOQUEAR,101\n" + // prioridad 101
+        val csv = "400;PREFIJO;BLOQUEAR;0;1;eti\n" + // valida
+                "badtype;PREFIJO;RARO;0;1;eti\n" + // tipo desconocido
+                "611;PREFIJO;BLOQUEAR;101;1;eti\n" + // prioridad 101
                 "\n" + // linea en blanco
-                "622,eti,NUMERO,PERMITIR,\n" + // valida
-                "400,eti2,PREFIJO,BLOQUEAR,0\n" + // patron repetido en fichero
-                "40,eti,PREFIJO,BLOQUEAR,0\n" // prefijo corto
+                "622;NUMERO;PERMITIR;;;\n" + // valida
+                "400;PREFIJO;BLOQUEAR;0;1;eti2\n" + // patron repetido en fichero
+                "40;PREFIJO;BLOQUEAR;0;1;eti\n" // prefijo corto
         val resParseo = CsvCodec.leerConResultado(ByteArrayInputStream(csv.toByteArray(StandardCharsets.UTF_8)))
-        assertTrue(resParseo.filas.size >= 2) // al menos las válidas
+        assertTrue(resParseo.filas.size >= 2)
         assertTrue(resParseo.errores.size >= 2)
         val plan = PlanificadorImportacion.planificarImportacion(emptyList(), resParseo.filas)
-        // fusionar errores
         val erroresPlan = plan.operaciones.filterIsInstance<OperacionCsv.Error>().map { it.numeroLineaOriginal to it.motivo }
         val todos = (resParseo.errores.map { it.numeroLineaOriginal to it.motivo } + erroresPlan).sortedBy { it.first }
         assertTrue(todos.isNotEmpty())

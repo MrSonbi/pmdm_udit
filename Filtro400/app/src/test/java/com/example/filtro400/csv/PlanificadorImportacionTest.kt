@@ -112,4 +112,50 @@ class PlanificadorImportacionTest {
         val plan = PlanificadorImportacion.planificarImportacion(existentes, filas)
         assertTrue(plan.operaciones[0] is OperacionCsv.Insertar)
     }
+
+    @Test
+    fun actualizacionEtiquetaVaciaConservaExistente() {
+        val existentes = listOf(
+            Regla(id = 1, patron = "400", etiqueta = "original", activa = true, creadaEn = 0, tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = 5)
+        )
+        val filas = listOf(
+            FilaCsv(numeroLineaOriginal = 2, patron = "400", etiqueta = "", tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = 5)
+        )
+        val plan = PlanificadorImportacion.planificarImportacion(existentes, filas)
+        assertTrue(plan.operaciones[0] is OperacionCsv.Omitir)
+    }
+
+    @Test
+    fun actualizacionPrioridadVaciaConservaExistente() {
+        val existentes = listOf(
+            Regla(id = 1, patron = "400", etiqueta = null, activa = true, creadaEn = 0, tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = 7)
+        )
+        val filas = listOf(
+            FilaCsv(numeroLineaOriginal = 2, patron = "400", etiqueta = null, tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = null)
+        )
+        val plan = PlanificadorImportacion.planificarImportacion(existentes, filas)
+        assertTrue(plan.operaciones[0] is OperacionCsv.Omitir)
+    }
+
+    @Test
+    fun altaPrioridadVaciaUsaPorDefecto() {
+        val existentes = emptyList<Regla>()
+        val plan = PlanificadorImportacion.planificarImportacion(existentes, listOf(
+            FilaCsv(numeroLineaOriginal = 1, patron = "611", etiqueta = null, tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = null)
+        ))
+        val op = plan.operaciones[0] as OperacionCsv.Insertar
+        assertEquals(0, op.prioridad)
+    }
+
+    @Test
+    fun validacionFallaAunquePatronExisteEnBd() {
+        val existentes = listOf(
+            Regla(id = 1, patron = "400", etiqueta = "x", activa = true, creadaEn = 0, tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = 0)
+        )
+        val filas = listOf(
+            FilaCsv(numeroLineaOriginal = 2, patron = "abc", etiqueta = null, tipo = TipoRegla.PREFIJO, accion = Accion.BLOQUEAR, prioridad = 0)
+        )
+        val plan = PlanificadorImportacion.planificarImportacion(existentes, filas)
+        assertTrue(plan.operaciones[0] is OperacionCsv.Error)
+    }
 }
