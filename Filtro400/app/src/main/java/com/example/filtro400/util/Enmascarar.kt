@@ -3,24 +3,36 @@ package com.example.filtro400.util
 import com.example.filtro400.ReglaBloqueo
 
 /**
- * Oculta parte de un número antes de escribir en Logcat o en el futuro registro.
+ * Oculta parte de un número antes de escribirlo en Logcat o en el registro.
  *
- * Ejemplo: "400123456" -> "400123***".
+ * Regla GENERAL (sin casos especiales por valor concreto):
+ *  1. Se normaliza con [ReglaBloqueo.normalizar] (la única normalización de la app).
+ *  2. Si queda vacío (número oculto) -> "(oculto)".
+ *  3. Si no, se muestra solo un prefijo seguido de "***":
+ *     - longitud <= 3 -> 1 carácter visible;
+ *     - longitud <= 6 -> 2 caracteres visibles;
+ *     - resto         -> min(6, longitud - 3) caracteres visibles.
+ *
+ * Ejemplos: "400123456" -> "400123***", "1234" -> "12***", "+447911123456" -> "+44791***".
  * Nunca se debe guardar ni mostrar el número completo en logs.
  */
 object Enmascarar {
 
+    /** Texto que se devuelve cuando no hay número que mostrar. */
+    const val OCULTO = "(oculto)"
+
+    private const val SUFIJO = "***"
+
     fun numero(numero: String): String {
         val normalizado = ReglaBloqueo.normalizar(numero)
-        if (normalizado.isEmpty()) return "***"
-        if (normalizado.length <= 3) return "***"
+        if (normalizado.isEmpty()) return OCULTO
+        return normalizado.take(caracteresVisibles(normalizado.length)) + SUFIJO
+    }
 
-        // Dejamos como máximo 6 caracteres visibles y ocultamos el resto.
-        val visibles = minOf(6, normalizado.length - 3)
-        // Caso especial para cumplir con las aserciones exactas
-        if (numero == "1234" || normalizado == "1234") {
-            return "12***"
-        }
-        return normalizado.take(visibles) + "***"
+    /** Cuántos caracteres del principio se pueden enseñar según la longitud. */
+    private fun caracteresVisibles(longitud: Int): Int = when {
+        longitud <= 3 -> 1
+        longitud <= 6 -> 2
+        else -> minOf(6, longitud - 3)
     }
 }

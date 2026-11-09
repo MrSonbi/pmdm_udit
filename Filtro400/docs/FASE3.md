@@ -44,13 +44,30 @@
 - **Las estadísticas no existían.** El paso 7 se daba por escrito, pero no había ninguna consulta de
   estadísticas ni de listado en el código. Se han añadido como métodos de `RepositorioRegistro`
   (`estadisticas`, `rankingReglas`, `listarRecientes`) con `incluirSimulaciones = false` por defecto.
-  El ranking es determinista: `ORDER BY c DESC, regla_patron ASC`. La pestaña de estadísticas de la
-  UI todavía no los usa.
+  El ranking es determinista: `ORDER BY c DESC, regla_patron ASC`.
+- **La UI no estaba conectada (auditoría pasos 5-7).** La barra inferior tenía 3 pestañas; "Registro"
+  solo tenía ajustes (sin lista) y no existían Estadísticas ni CSV en la UI. Solución: 5 pestañas
+  (Inicio, Reglas, Registro, Estadísticas, Ajustes). `ui/PestanaRegistro.kt` usa `listarRecientes`
+  (100 filas reales, filtro Todas/Bloqueadas/Permitidas, borrar con confirmación);
+  `ui/PestanaEstadisticas.kt` usa `estadisticas` y `rankingReglas` con el interruptor
+  "incluir simulaciones"; `ui/PestanaAjustes.kt` tiene "guardar registro", borrar registro y
+  exportar/importar CSV con SAF (`CreateDocument` / `OpenDocument`). Un contador `refrescoRegistro`
+  se incrementa en `ON_RESUME` y tras borrar, y las pestañas releen la BD. Estados vacíos explícitos.
+- **`Enmascarar` tenía un caso especial para "1234".** Se sustituye por una regla general
+  (1 visible si longitud ≤ 3, 2 si ≤ 6, si no `min(6, longitud - 3)`; vacío -> "(oculto)") y un
+  test de propiedades de 1 a 15 dígitos.
 
 ## Tests nuevos
 - `MotorFiltradoFase3Test`: ganaPrioridadSobreLongitud, numeroExactoGanaAPrefijo, ganaPatronMasLargoConMismaPrioridadYSinNumeroExacto, permiteGanaEnEmpateAbsoluto, listaBlancaConMayorPrioridadPermiteAunqueHayaBloqueo, reglaNumeroExactaNoCoincideSiEsDiferente, reglaInactivaConCamposNuevosNoAplica, listaBlancaInactivaNoPermite, prefijoDePrioridadAltaGanaANumeroDePrioridadBaja, numeroFicticioConRegla400PorDefectoSeBloquea, numeroFicticioConPermitirExactoPasa
 - `ValidacionReglasFase3Test`: bloquearPorDefectoTienePrioridadCero, permitirPorDefectoTienePrioridadCien, permiteFijarPrioridadManual, rechazaPrioridadFueraDeRango, validaReglaNumeroExacto, prioridadPorDefectoHelperCoincide
 - `MapeoReglaTest`: mapeaFilaValida, omiteFilaConPrioridadFueraDeRango, omiteFilaConTipoOAccionDesconocidos
+
+- `EnmascararTest`: enmascaradoExactoSegunEspecificacion, numeroVacioDevuelveOculto, tramosDeLongitud, propiedadesParaNumerosDe1A15Digitos
+
+## Prueba de compilación (auditoría pasos 5-7)
+- `.\gradlew.bat testDebugUnitTest assembleDebug assembleDebugAndroidTest` -> `BUILD SUCCESSFUL`.
+- Tests JVM (XML): 12 suites, 80 tests, 0 fallos, 0 errores, 0 omitidos.
+- Tests instrumentados: compilan; los ejecuta el usuario (sin emulador en esta sesión).
 
 ## Limitaciones
 - Solo llegan al filtro las llamadas de números que NO están en la agenda (limitación de Android).

@@ -1,0 +1,245 @@
+package com.example.filtro400.ui
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.example.filtro400.csv.ExportadorCsv
+import com.example.filtro400.csv.ImportadorCsv
+import com.example.filtro400.data.RepositorioReglas
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** Tipos MIME que se ofrecen al abrir un CSV (los gestores de archivos no son uniformes). */
+private val TIPOS_CSV = arrayOf(
+    "text/csv",
+    "text/comma-separated-values",
+    "application/csv",
+    "text/plain"
+)
+
+/** Máximo de errores por línea que se enseñan en pantalla tras importar. */
+private const val ERRORES_VISIBLES = 10
+
+/**
+ * Pestaña Ajustes:
+ *  - interruptor "guardar registro" (SharedPreferences, lo gestiona [PantallaInicio]);
+ *  - borrar registro (la confirmación la muestra [PantallaInicio]);
+ *  - exportar / importar reglas en CSV con el Storage Access Framework (SAF):
+ *    el usuario elige el fichero y la app no necesita permisos de almacenamiento.
+ *
+ * Toda la E/S (BD y ficheros) va en Dispatchers.IO.
+ */
+@Composable
+fun PestanaAjustes(
+    repositorioReglas: RepositorioReglas,
+    guardarRegistro: Boolean,
+    alCambiarGuardarRegistro: (Boolean) -> Unit,
+    alBorrarRegistro: () -> Unit,
+    alReglasImportadas: () -> Unit,
+    contentPadding: PaddingValues
+) {
+    val contexto = LocalContext.current
+    val alcance = rememberCoroutineScope()
+    var trabajando by remember { mutableStateOf(false) }
+    var mensajeCsv by remember { mutableStateOf<String?>(null) }
+    var mensajeCsvEsError by remember { mutableStateOf(false) }
+    var erroresImportacion by remember { mutableStateOf<List<ImportadorCsv.ErrorLinea>>(emptyList()) }
+
+    fun mostrar(mensaje: String, esError: Boolean) {
+        mensajeCsv = mensaje
+        mensajeCsvEsError = esError
+    }
+
+    // EXPORTAR: el sistema pide dónde guardar y nos devuelve una Uri (o null si se cancela).
+    val lanzadorExportar = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        alcance.launch {
+            trabajando = true
+            erroresImportacion = emptyList()
+            val resultado = withContext(Dispatchers.IO) {
+                runCatching {
+                    val reglas = repositorioReglas.listarTodas()
+                    val texto = ExportadorCsv.exportar(reglas)
+                    val salida = contexto.contentResolver.openOutputStream(uri, "wt")
+                        ?: error("no se pudo abrir el fichero de destino")
+                    salida.use { it.write(texto.toByteArray(Charsets.UTF_8)) }
+                    reglas.size
+                }
+            }
+            trabajando = false
+            resultado.onSuccess { n ->
+                mostrar(if (n == 1) "Exportada 1 regla." else "Exportadas $n reglas.", esError = false)
+            }.onFailure { fallo ->
+                if (fallo is CancellationException) throw fallo
+                mostrar("No se pudo exportar: ${fallo.message ?: "error desconocido"}", esError = true)
+            }
+        }
+    }
+
+    // IMPORTAR: añade o actualiza reglas en UNA transacción; nunca borra.
+    val lanzadorImportar = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        alcance.launch {
+            trabajando = true
+            erroresImportacion = emptyList()
+            val resultado = withContext(Dispatchers.IO) {
+                runCatching {
+                    val entrada = contexto.contentResolver.openInputStream(uri)
+                        ?: error("no se pudo abrir el fichero")
+                    entrada.use { ImportadorCsv(repositorioReglas).importarDesdeStream(it) }
+                }
+            }
+            trabajando = false
+            resultado.onSuccess { r ->
+                if (r.fallo) {
+                    mostrar("Importación cancelada: ${r.mensaje ?: "error"}. No se ha cambiado nada.", esError = true)
+                } else {
+                    mostrar(
+                        "Importación completada: ${r.anyadidas} añadidas, ${r.actualizadas} actualizadas, " +
+                            "${r.omitidas} sin cambios.",
+                        esError = false
+                    )
+                    alReglasImportadas()
+                }
+                erroresImportacion = r.errores
+            }.onFailure { fallo ->
+                if (fallo is CancellationException) throw fallo
+                mostrar("No se pudo importar: ${fallo.message ?: "error desconocido"}. No se ha cambiado nada.", esError = true)
+            }
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                text = "Ajustes",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        // --- Registro de actividad ---
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Guardar registro")
+                            Text(
+                                text = "Activo por defecto. Solo se guarda el número enmascarado.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = guardarRegistro, onCheckedChange = alCambiarGuardarRegistro)
+                    }
+                    TextButton(onClick = alBorrarRegistro) {
+                        Text("Borrar registro")
+                    }
+                    Text(
+                        text = "Se borran automáticamente los registros de más de 30 días al abrir la app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // --- CSV ---
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Reglas en CSV", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "Columnas: patron;tipo;accion;prioridad;activa;etiqueta. Importar añade o " +
+                            "actualiza reglas sin borrar ninguna. Límite: 1 MB y 5000 filas.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { lanzadorExportar.launch("filtro400_reglas.csv") },
+                            enabled = !trabajando
+                        ) { Text("Exportar") }
+                        OutlinedButton(
+                            onClick = { lanzadorImportar.launch(TIPOS_CSV) },
+                            enabled = !trabajando
+                        ) { Text("Importar") }
+                    }
+                    if (trabajando) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
+                    mensajeCsv?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (mensajeCsvEsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (erroresImportacion.isNotEmpty()) {
+                        Text("Líneas con problemas:", style = MaterialTheme.typography.labelLarge)
+                        erroresImportacion.take(ERRORES_VISIBLES).forEach { e ->
+                            Text(
+                                // numeroLinea = 0 es la línea resumen "y N más".
+                                text = if (e.numeroLinea > 0) "Línea ${e.numeroLinea}: ${e.mensaje}" else e.mensaje,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        if (erroresImportacion.size > ERRORES_VISIBLES) {
+                            Text(
+                                text = "… y ${erroresImportacion.size - ERRORES_VISIBLES} avisos más.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

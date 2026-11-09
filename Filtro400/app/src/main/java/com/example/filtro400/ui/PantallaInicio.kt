@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -59,7 +60,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Pantalla con navegación por pestañas: Inicio, Reglas, Registro/Ajustes.
+ * Pantalla con navegación por pestañas: Inicio, Reglas, Registro, Estadísticas y Ajustes.
+ * Registro, Estadísticas y Ajustes viven en sus propios archivos (Pestana*.kt).
  */
 @Composable
 fun PantallaInicio() {
@@ -86,12 +88,19 @@ fun PantallaInicio() {
         mutableStateOf(Preferencias.guardarRegistroActivado(contexto))
     }
 
+    // Contador que las pestañas Registro y Estadísticas observan: al cambiar,
+    // vuelven a leer la BD (al volver a la app, tras borrar el registro...).
+    var refrescoRegistro by remember { mutableIntStateOf(0) }
+
     val cicloVida = LocalLifecycleOwner.current
     DisposableEffect(cicloVida) {
         val observador = LifecycleEventObserver { _, evento ->
             if (evento == Lifecycle.Event.ON_RESUME) {
+                // El usuario puede haber quitado el rol en Ajustes del sistema.
                 filtroActivo = roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
                 guardarRegistro = Preferencias.guardarRegistroActivado(contexto)
+                // Mientras la app estaba en segundo plano pudo entrar alguna llamada.
+                refrescoRegistro++
             }
         }
         cicloVida.lifecycle.addObserver(observador)
@@ -147,25 +156,23 @@ fun PantallaInicio() {
 
     Scaffold(
         bottomBar = {
+            // Pestañas solo texto (sin dependencia de iconos extra).
             NavigationBar {
-                NavigationBarItem(
-                    selected = pestana == 0,
-                    onClick = { pestana = 0 },
-                    icon = {},
-                    label = { Text("Inicio") }
-                )
-                NavigationBarItem(
-                    selected = pestana == 1,
-                    onClick = { pestana = 1 },
-                    icon = {},
-                    label = { Text("Reglas") }
-                )
-                NavigationBarItem(
-                    selected = pestana == 2,
-                    onClick = { pestana = 2 },
-                    icon = {},
-                    label = { Text("Registro") }
-                )
+                PESTANAS.forEachIndexed { indice, titulo ->
+                    NavigationBarItem(
+                        selected = pestana == indice,
+                        onClick = { pestana = indice },
+                        icon = {},
+                        label = {
+                            Text(
+                                text = titulo,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    )
+                }
             }
         }
     ) { paddingValores ->
@@ -314,60 +321,32 @@ fun PantallaInicio() {
                 }
             }
 
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValores),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "Registro y ajustes",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Card {
-                                Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text("Guardar registro")
-                                            Text(
-                                                text = "Activo por defecto. Solo se guarda el número enmascarado.",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        Switch(
-                                            checked = guardarRegistro,
-                                            onCheckedChange = { activar ->
-                                                guardarRegistro = activar
-                                                Preferencias.setGuardarRegistro(contexto, activar)
-                                            }
-                                        )
-                                    }
-                                    TextButton(onClick = { mostrarConfirmacionBorrarRegistro = true }) {
-                                        Text("Borrar registro")
-                                    }
-                                    Text(
-                                        text = "Se borran automáticamente los registros de más de 30 días al abrir la app.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            2 -> PestanaRegistro(
+                repositorioRegistro = repositorioRegistro,
+                refresco = refrescoRegistro,
+                guardarRegistro = guardarRegistro,
+                alBorrarRegistro = { mostrarConfirmacionBorrarRegistro = true },
+                contentPadding = paddingValores
+            )
+
+            3 -> PestanaEstadisticas(
+                repositorioRegistro = repositorioRegistro,
+                refresco = refrescoRegistro,
+                contentPadding = paddingValores
+            )
+
+            else -> PestanaAjustes(
+                repositorioReglas = repositorio,
+                guardarRegistro = guardarRegistro,
+                alCambiarGuardarRegistro = { activar ->
+                    guardarRegistro = activar
+                    Preferencias.setGuardarRegistro(contexto, activar)
+                },
+                alBorrarRegistro = { mostrarConfirmacionBorrarRegistro = true },
+                // Tras importar, la pestaña Reglas debe releer la BD.
+                alReglasImportadas = { recarga++ },
+                contentPadding = paddingValores
+            )
         }
     }
 
@@ -426,30 +405,24 @@ fun PantallaInicio() {
     }
 
     if (mostrarConfirmacionBorrarRegistro) {
-        AlertDialog(
-            onDismissRequest = { mostrarConfirmacionBorrarRegistro = false },
-            title = { Text("Borrar registro") },
-            text = { Text("¿Seguro que quieres borrar todo el registro de actividad? Esta acción no se puede deshacer.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    mostrarConfirmacionBorrarRegistro = false
-                    alcance.launch {
-                        withContext(Dispatchers.IO) {
-                            runCatching { repositorioRegistro.borrarTodos() }
-                        }
+        DialogoBorrarRegistro(
+            alConfirmar = {
+                mostrarConfirmacionBorrarRegistro = false
+                alcance.launch {
+                    withContext(Dispatchers.IO) {
+                        runCatching { repositorioRegistro.borrarTodos() }
                     }
-                }) {
-                    Text("Borrar")
+                    // Registro y Estadísticas se vuelven a leer (quedarán vacías).
+                    refrescoRegistro++
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { mostrarConfirmacionBorrarRegistro = false }) {
-                    Text("Cancelar")
-                }
-            }
+            alCancelar = { mostrarConfirmacionBorrarRegistro = false }
         )
     }
 }
+
+/** Títulos de la barra inferior, en orden. El índice es la pestaña. */
+private val PESTANAS = listOf("Inicio", "Reglas", "Registro", "Estadísticas", "Ajustes")
 
 @Composable
 private fun TarjetaEstado(filtroActivo: Boolean, alActivar: () -> Unit) {
