@@ -1,77 +1,117 @@
 # FASE 3 — Filtro 400
 
-## Decisiones
-- Migración v1 → v2 con `ALTER TABLE` (sin reconstruir tabla). En instalación nueva se crea esquema v2 completo en `onCreate`.
-- `onUpgrade` no siembra el 400; las reglas v1 migran a `PREFIJO`, `BLOQUEAR`, `0`.
-- Paquete `modelo/` con `Regla`, `Accion`, `TipoRegla`. `motor/` y `data/` dependen de `modelo/`, nunca entre sí.
-- Motor con desempate: prioridad (mayor primero) → `NUMERO` exacto antes que `PREFIJO` → patrón más largo → `PERMITIR` en empate absoluto.
-- Registro cerrado en v2 con columnas exactas e índices en `fecha` y `regla_id`. Solo se guarda el número enmascarado. Origen `REAL`/`SIMULADA`.
-- Ajuste "guardar registro" activo por defecto en `SharedPreferences`. Borrado automático >30 días al abrir la app en segundo plano; borrado manual con confirmación.
-- CSV: añadir/actualizar sin borrar, una sola transacción, validación con `ValidacionReglas`, refresco de caché una vez, resumen.
-- Prioridad por defecto: `BLOQUEAR` = 0, `PERMITIR` = 100 (aplicado en UI y CSV cuando falte).
+> Revisado el 09/11/2026 contra el código: cada afirmación de este documento se ha
+> comprobado leyendo las fuentes indicadas. Se han quitado los resultados de ejecuciones
+> antiguas que no se pueden comprobar leyendo el código.
 
-## Pasos ejecutados
-- Paso 1: migración v1→v2 + test instrumentado. Tests instrumentados: 5, 0 fallos/errores.
-- Pasos 2-4: modelo, motor v3, validación/CRUD, interfaz con tipo/acción/prioridad, robustez del mapeo, limpieza de sobrecargas antiguas.
-- Pasos 5-6: navegación con pestañas solo texto, registro/ajustes, servicio responde primero y registra después en try/catch.
+## Decisiones
+- **Migración v1 → v2** con `ALTER TABLE` (sin reconstruir la tabla): `BaseDatos.onUpgrade`
+  añade `tipo`, `accion` y `prioridad` con valores por defecto `PREFIJO`, `BLOQUEAR`, `0`, y crea
+  la tabla `registro` con sus dos índices. En instalación nueva, `onCreate` crea el esquema v2
+  completo y siembra la regla 400.
+- `onUpgrade` **no** siembra el 400: si el usuario lo borró en v1, sigue borrado
+  (`MigracionV1V2Test.migracionNoVuelveASembrarEl400SiSeBorro`).
+- **Paquetes**: `modelo/` (`Regla`, `Accion`, `TipoRegla`) no depende de nadie. `motor/` solo
+  depende de `modelo/` (y de `ReglaBloqueo`), nunca de `data/`. `data/` sí usa
+  `motor.ValidacionReglas` (prioridad por defecto y mapeo de filas en `MapeoRegla`).
+- **Motor** (`MotorFiltrado.evaluar`, Kotlin puro), orden de desempate: prioridad (mayor primero)
+  → `NUMERO` exacto antes que `PREFIJO` → patrón más largo → `PERMITIR` en empate absoluto.
+  Número vacío u oculto → se permite.
+- **Registro**: tabla `registro` con columnas `id, fecha, numero_enmascarado, decision,
+  regla_id, regla_patron, regla_tipo, regla_prioridad, motivo, origen` e índices en `fecha` y
+  `regla_id`. `origen` tiene `CHECK IN ('REAL','SIMULADA')`. `insertarSincrono` enmascara el
+  número con `Enmascarar.numero` antes de guardarlo.
+- **Servicio**: calcula la decisión, responde una sola vez (`respondToCall`) y DESPUÉS, en
+  `try/catch` separados, loguea (número enmascarado) e inserta en el registro de forma síncrona
+  si el ajuste está activo. Cualquier excepción antes de responder → se permite (fail-open).
+- **Ajuste "guardar registro"** en `SharedPreferences` (`datos/Preferencias`), activo por defecto.
+- **Borrado del registro**: automático de filas con más de 30 días al abrir la app
+  (`LaunchedEffect` en `PantallaInicio`, en `Dispatchers.IO`); manual con diálogo de confirmación.
+- **CSV**: importar añade o actualiza, nunca borra. El plan lo calcula `PlanificadorImportacion`
+  (puro) y `RepositorioReglas.aplicarPlan` lo ejecuta en UNA transacción; si algo falla se hace
+  rollback y no cambia nada. La caché de reglas activas se refresca una vez al terminar.
+  Límites: 1 MB y 5000 filas (`CsvCodec`), además de 1000 caracteres por línea.
+- **Prioridad por defecto**: `BLOQUEAR` = 0, `PERMITIR` = 100 (`ValidacionReglas.prioridadPorDefecto`),
+  usada en el diálogo de reglas, en `RepositorioReglas.insertar/actualizar` y en el CSV.
+- **CSV, actualización de una regla existente con prioridad vacía**: si la acción de la fila es
+  la misma que la de la regla, se conserva la prioridad existente; si la acción cambia, se usa la
+  prioridad por defecto de la NUEVA acción. La comparación "sin cambios" usa el mismo criterio.
+- **CSV, etiqueta**: al actualizar, `etiqueta = etiquetaCsvLimpia ?: etiqueta existente`.
+- **CSV, duplicados en el fichero**: un patrón solo se marca como "visto" cuando la fila ha
+  pasado la validación; una fila inválida no hace duplicada a una posterior válida.
+- **CSV, errores**: `aplicarPlan` devuelve todos los errores; `ImportadorCsv.importarDesdeStream`
+  los junta con los de parseo, los ordena por línea y los recorta UNA vez con
+  `RecorteErrores.recortar` (50 + una línea "y N más", con N = total − 50). La UI los muestra tal
+  cual, sin volver a recortar.
+- **Estadísticas**: bloqueadas y permitidas siempre por separado, para hoy, últimos 7 días y
+  todo el registro. "Hoy" = desde las 00:00 de la zona local; "últimos 7 días" = hoy y los 6 días
+  de calendario anteriores (desde las 00:00 locales de hace 6 días). Los límites se calculan en
+  `util/Fechas` (puro, zona inyectable) y `RepositorioRegistro.estadisticas(ahora, zona)` los
+  usa en una sola consulta SQL. Por defecto excluyen las filas `SIMULADA`.
+- **Enmascarado** (`util/Enmascarar`): normaliza con `ReglaBloqueo.normalizar`; vacío →
+  "(oculto)"; si no, prefijo visible + "***": 1 dígito → 0 visibles ("***"); 2-3 → 1; 4-6 → 2;
+  resto → `min(6, longitud − 3)`. Siempre queda oculto al menos un carácter.
+
+## Interfaz
+- Barra inferior con 5 pestañas solo texto (`icon = {}`): Inicio, Reglas, Registro,
+  Estadísticas, Ajustes.
+- `PestanaRegistro`: últimas 100 filas reales (`listarRecientes`), filtro
+  Todas/Bloqueadas/Permitidas, borrar con confirmación.
+- `PestanaEstadisticas`: tarjetas "Hoy (desde las 00:00)", "Últimos 7 días (hoy y los 6
+  anteriores)" y "Todo el registro", cada una con "Bloqueadas…" y "Permitidas…"; ranking de las
+  10 reglas que más han decidido (`ORDER BY c DESC, regla_patron ASC`); interruptor
+  "incluir simulaciones".
+- `PestanaAjustes`: "guardar registro", borrar registro y exportar/importar CSV con SAF
+  (`CreateDocument` / `OpenDocument`).
+- Un contador `refrescoRegistro` se incrementa en `ON_RESUME` y tras borrar el registro; Registro
+  y Estadísticas vuelven a leer la BD al cambiar.
 
 ## Dificultades
-- **Los tests instrumentados se pisaban por un singleton oculto en `BaseDatos`.**
-  - Síntoma: los tests que comparten proceso no estaban aislados. Una BD "de test" podía acabar
-    siendo el fichero de otro test, y `esquemaMigradoEsIgualAlDeUnaInstalacionNueva` podía comparar
-    un fichero consigo mismo y salir verde sin probar nada.
-  - Causa: el constructor de `BaseDatos` guardaba la primera instancia en un campo estático
-    `instancia` y, si ya existía, IGNORABA el `nombreBd` recibido y abría el fichero de esa primera
-    instancia. Además, `AplicarPlanTest` usaba reflexión para colar su BD dentro de `RepositorioReglas`.
-  - Solución:
-    1. `BaseDatos` vuelve a ser un `SQLiteOpenHelper` normal, sin estado estático:
-       `SQLiteOpenHelper(contexto.applicationContext, nombreBd, null, VERSION_BD)`. El nombre es
-       obligatorio para que nadie abra `filtro400.db` sin querer.
-    2. El singleton vive en UN solo sitio: `data/AlmacenDatos.obtener(contexto)` crea
-       `BaseDatos(applicationContext, NOMBRE_BD)` una única vez. `RepositorioReglas.obtener` y
-       `RepositorioRegistro.obtener` (y a través de ellos el servicio, la UI y el CSV) piden la BD ahí.
-       Comprobado con `Select-String -Pattern 'BaseDatos\('` sobre `app\src\main`: la única
-       construcción real está en `AlmacenDatos.kt` (el resto de coincidencias son comentarios y la
-       propia declaración de la clase).
-    3. `RepositorioReglas(baseDatos)` y `RepositorioRegistro(baseDatos)` reciben la BD por constructor.
-       Los tests crean `BaseDatos(contexto, "test_xxx.db")` y la inyectan. Ya no hay reflexión.
-    4. Los tests instrumentados prueban el código de producción (`insertarSincrono` con fecha opcional,
-       `borrarMasAntiguosDe`, `contar`, `estadisticas`, `rankingReglas`, `listarRecientes`,
-       `aplicarPlan`) en vez de SQL escrito a mano.
-    5. Test de regresión `AislamientoBaseDatosTest`: dos `BaseDatos` con nombres distintos abren
-       rutas distintas y lo que se escribe en una no aparece en la otra. `MigracionV1V2Test` comprueba
-       que la BD migrada y la nueva son ficheros distintos (ruta y datos) ANTES de comparar esquemas.
-- **Las estadísticas no existían.** El paso 7 se daba por escrito, pero no había ninguna consulta de
-  estadísticas ni de listado en el código. Se han añadido como métodos de `RepositorioRegistro`
-  (`estadisticas`, `rankingReglas`, `listarRecientes`) con `incluirSimulaciones = false` por defecto.
-  El ranking es determinista: `ORDER BY c DESC, regla_patron ASC`.
-- **La UI no estaba conectada (auditoría pasos 5-7).** La barra inferior tenía 3 pestañas; "Registro"
-  solo tenía ajustes (sin lista) y no existían Estadísticas ni CSV en la UI. Solución: 5 pestañas
-  (Inicio, Reglas, Registro, Estadísticas, Ajustes). `ui/PestanaRegistro.kt` usa `listarRecientes`
-  (100 filas reales, filtro Todas/Bloqueadas/Permitidas, borrar con confirmación);
-  `ui/PestanaEstadisticas.kt` usa `estadisticas` y `rankingReglas` con el interruptor
-  "incluir simulaciones"; `ui/PestanaAjustes.kt` tiene "guardar registro", borrar registro y
-  exportar/importar CSV con SAF (`CreateDocument` / `OpenDocument`). Un contador `refrescoRegistro`
-  se incrementa en `ON_RESUME` y tras borrar, y las pestañas releen la BD. Estados vacíos explícitos.
-- **`Enmascarar` tenía un caso especial para "1234".** Se sustituye por una regla general
-  (1 visible si longitud ≤ 3, 2 si ≤ 6, si no `min(6, longitud - 3)`; vacío -> "(oculto)") y un
-  test de propiedades de 1 a 15 dígitos.
+- **Los tests instrumentados podían compartir fichero de BD.**
+  - Causa: una versión anterior de `BaseDatos` guardaba la primera instancia en un campo estático
+    e ignoraba el `nombreBd` de las siguientes.
+  - Solución (estado actual del código):
+    1. `BaseDatos` es un `SQLiteOpenHelper` normal, sin estado estático y con el nombre
+       obligatorio: `SQLiteOpenHelper(contexto.applicationContext, nombreBd, null, VERSION_BD)`.
+    2. El único sitio de producción que construye la BD es `data/AlmacenDatos.obtener`, con
+       `BaseDatos.NOMBRE_BD`. Comprobado con `Select-String -Pattern 'BaseDatos\('` sobre
+       `app\src\main`: la única construcción real está en `AlmacenDatos.kt` (el resto son
+       comentarios y la declaración de la clase).
+    3. `RepositorioReglas(baseDatos)` y `RepositorioRegistro(baseDatos)` reciben la BD por
+       constructor; los tests crean `BaseDatos(contexto, "test_xxx.db")` y la inyectan.
+    4. `AislamientoBaseDatosTest` comprueba que dos `BaseDatos` con nombres distintos abren rutas
+       distintas y no comparten datos. `MigracionV1V2Test` comprueba que la BD migrada y la nueva
+       son ficheros distintos (ruta y datos) antes de comparar esquemas.
+- **Recorte de errores duplicado.** Se recortaba a 50 en `aplicarPlan` y otra vez en
+  `ImportadorCsv` (y la UI recortaba a 10): la línea "y N más" entraba en el segundo recorte, se
+  ordenaba la primera (línea 0) y N salía mal. Ahora hay un único recorte puro (`RecorteErrores`).
+- **"Hoy" y el cambio de hora.** Con "ahora − 24 h" o con UTC, "hoy" incluía llamadas de ayer.
+  Restar días en bloques de 24 h falla en los días de 23 h o 25 h; por eso `Fechas` resta días de
+  calendario con `LocalDate.minusDays` y usa `atStartOfDay(zona)`.
 
-## Tests nuevos
-- `MotorFiltradoFase3Test`: ganaPrioridadSobreLongitud, numeroExactoGanaAPrefijo, ganaPatronMasLargoConMismaPrioridadYSinNumeroExacto, permiteGanaEnEmpateAbsoluto, listaBlancaConMayorPrioridadPermiteAunqueHayaBloqueo, reglaNumeroExactaNoCoincideSiEsDiferente, reglaInactivaConCamposNuevosNoAplica, listaBlancaInactivaNoPermite, prefijoDePrioridadAltaGanaANumeroDePrioridadBaja, numeroFicticioConRegla400PorDefectoSeBloquea, numeroFicticioConPermitirExactoPasa
-- `ValidacionReglasFase3Test`: bloquearPorDefectoTienePrioridadCero, permitirPorDefectoTienePrioridadCien, permiteFijarPrioridadManual, rechazaPrioridadFueraDeRango, validaReglaNumeroExacto, prioridadPorDefectoHelperCoincide
-- `MapeoReglaTest`: mapeaFilaValida, omiteFilaConPrioridadFueraDeRango, omiteFilaConTipoOAccionDesconocidos
-
-- `EnmascararTest`: enmascaradoExactoSegunEspecificacion, numeroVacioDevuelveOculto, tramosDeLongitud, propiedadesParaNumerosDe1A15Digitos
-
-## Prueba de compilación (auditoría pasos 5-7)
-- `.\gradlew.bat testDebugUnitTest assembleDebug assembleDebugAndroidTest` -> `BUILD SUCCESSFUL`.
-- Tests JVM (XML): 12 suites, 80 tests, 0 fallos, 0 errores, 0 omitidos.
-- Tests instrumentados: compilan; los ejecuta el usuario (sin emulador en esta sesión).
+## Tests
+- JVM (`app/src/test`): 14 suites, 100 tests (ver `docs/INFORME_SESION.md` para el recuento por
+  suite de la última ejecución).
+  - Nuevos o ampliados en esta sesión: `FechasTest` (7, incluye los cambios de hora de
+    Europe/Madrid del 29/03/2026 y 25/10/2026), `RecorteErroresTest` (0, 50, 51 y 120 errores),
+    `PlanificadorImportacionTest` (prioridad vacía con/sin cambio de acción, "sin cambios",
+    fila inválida que no hace duplicada a la válida, etiqueta), `EnmascararTest` (1 dígito → "***").
+- Instrumentados (`app/src/androidTest`), todos con BD `test_*.db`, nunca `filtro400.db`:
+  `MigracionV1V2Test` (4), `AislamientoBaseDatosTest` (3), `AplicarPlanTest` (3),
+  `RepositorioRegistroTest` (9, con instante y zona fijos: 09/11/2026 12:00 Europe/Madrid),
+  `ExampleInstrumentedTest` (1). En esta sesión solo se han compilado
+  (`assembleDebugAndroidTest`); los ejecuta el usuario.
 
 ## Limitaciones
 - Solo llegan al filtro las llamadas de números que NO están en la agenda (limitación de Android).
-- `CallResponse` sin cambios. `fail-open`. Nunca se loguea el número completo.
-- No se puede volver a una versión anterior de la app con la BD v2 (SQLiteOpenHelper no permite bajar de versión).
-- Sin dependencias nuevas, sin subir AGP/Kotlin/Compose/Gradle, `minSdk = 29`.
-- Sin Room/KSP/kapt.
+- Fail-open: ante cualquier error se permite la llamada. Nunca se loguea el número completo.
+- No se puede volver a una versión anterior de la app con la BD v2: `BaseDatos` no sobrescribe
+  `onDowngrade` y `SQLiteOpenHelper` no permite bajar de versión.
+- **Una etiqueta vacía en el CSV conserva la existente, así que el CSV no puede borrar etiquetas.**
+  Para quitar una etiqueta hay que editar la regla desde la app.
+- El CSV no puede borrar reglas (solo añade o actualiza).
+- Nadie guarda todavía filas con origen `SIMULADA` (el probador no escribe en el registro), así que
+  el interruptor "incluir simulaciones" no cambia las cifras en la app real.
+- `LimitadorBytesInputStream` lanza el error de tamaño en cuanto se han leído 1 048 576 bytes y se
+  pide otra lectura, así que un fichero de exactamente 1 MB también se rechaza.
+- Sin dependencias nuevas, sin subir AGP/Kotlin/Compose/Gradle, `minSdk = 29`. Sin Room/KSP/kapt.

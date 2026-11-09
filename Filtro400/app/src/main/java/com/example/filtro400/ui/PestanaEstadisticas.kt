@@ -34,7 +34,8 @@ private const val TOP_REGLAS = 10
 
 /**
  * Pestaña Estadísticas. Usa los métodos ya probados de [RepositorioRegistro]:
- *  - [RepositorioRegistro.estadisticas]: totales en una sola consulta;
+ *  - [RepositorioRegistro.estadisticas]: bloqueadas y permitidas (hoy, 7 días
+ *    y total) en una sola consulta; "hoy" empieza a las 00:00 de la zona local;
  *  - [RepositorioRegistro.rankingReglas]: reglas que más han decidido.
  *
  * El interruptor "incluir simulaciones" solo cambia el parámetro
@@ -125,18 +126,23 @@ fun PestanaEstadisticas(
             }
 
             else -> {
+                // Bloqueadas y permitidas SIEMPRE por separado, con etiqueta explícita.
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Cifra("Total bloqueadas", datos.bloqueadas, destacada = true)
-                            Cifra("Total permitidas", datos.permitidas)
-                            Cifra("Llamadas registradas hoy", datos.hoy)
-                            Cifra("Llamadas en los últimos 7 días", datos.ultimos7Dias)
-                            Cifra("Total en el registro", datos.total)
-                        }
+                    TarjetaCifras(titulo = "Hoy (desde las 00:00)") {
+                        Cifra("Bloqueadas hoy", datos.bloqueadasHoy, destacada = true)
+                        Cifra("Permitidas hoy", datos.permitidasHoy)
+                    }
+                }
+                item {
+                    TarjetaCifras(titulo = "Últimos 7 días (hoy y los 6 anteriores)") {
+                        Cifra("Bloqueadas en los últimos 7 días", datos.bloqueadas7Dias, destacada = true)
+                        Cifra("Permitidas en los últimos 7 días", datos.permitidas7Dias)
+                    }
+                }
+                item {
+                    TarjetaCifras(titulo = "Todo el registro") {
+                        Cifra("Bloqueadas en total", datos.bloqueadas, destacada = true)
+                        Cifra("Permitidas en total", datos.permitidas)
                     }
                 }
                 item {
@@ -169,6 +175,20 @@ fun PestanaEstadisticas(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Tarjeta con un título y varias cifras debajo. */
+@Composable
+private fun TarjetaCifras(titulo: String, contenido: @Composable () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(text = titulo, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            contenido()
         }
     }
 }

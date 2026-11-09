@@ -255,8 +255,9 @@ class RepositorioReglas(
             writableDb.endTransaction()
         }
         refrescarCache()
-        val erroresFinales = resumen.errores.take(50) + if (resumen.errores.size > 50) listOf(com.example.filtro400.csv.ImportadorCsv.ErrorLinea(0, "y ${resumen.errores.size - 50} más")) else emptyList()
-        return com.example.filtro400.csv.ImportadorCsv.ResultadoImportacion(resumen.anyadidas, resumen.actualizadas, resumen.omitidas, erroresFinales, fallo = false)
+        // Se devuelven TODOS los errores: el recorte a 50 se hace una sola vez
+        // en ImportadorCsv con RecorteErrores.recortar.
+        return com.example.filtro400.csv.ImportadorCsv.ResultadoImportacion(resumen.anyadidas, resumen.actualizadas, resumen.omitidas, resumen.errores, fallo = false)
     }
 
     companion object {

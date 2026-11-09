@@ -47,9 +47,6 @@ private val TIPOS_CSV = arrayOf(
     "text/plain"
 )
 
-/** Máximo de errores por línea que se enseñan en pantalla tras importar. */
-private const val ERRORES_VISIBLES = 10
-
 /**
  * Pestaña Ajustes:
  *  - interruptor "guardar registro" (SharedPreferences, lo gestiona [PantallaInicio]);
@@ -224,16 +221,11 @@ fun PestanaAjustes(
                     }
                     if (erroresImportacion.isNotEmpty()) {
                         Text("Líneas con problemas:", style = MaterialTheme.typography.labelLarge)
-                        erroresImportacion.take(ERRORES_VISIBLES).forEach { e ->
+                        // La lista ya llega recortada (RecorteErrores): aquí no se recorta otra vez.
+                        erroresImportacion.forEach { e ->
                             Text(
                                 // numeroLinea = 0 es la línea resumen "y N más".
                                 text = if (e.numeroLinea > 0) "Línea ${e.numeroLinea}: ${e.mensaje}" else e.mensaje,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        if (erroresImportacion.size > ERRORES_VISIBLES) {
-                            Text(
-                                text = "… y ${erroresImportacion.size - ERRORES_VISIBLES} avisos más.",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }

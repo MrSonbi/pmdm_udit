@@ -19,6 +19,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /**
  * Prueba del CÓDIGO DE PRODUCCIÓN de [RepositorioRegistro] con SQLite real.
@@ -35,9 +37,15 @@ class RepositorioRegistroTest {
     private lateinit var baseDatos: BaseDatos
     private lateinit var repositorio: RepositorioRegistro
 
-    // Instante fijo para que "hoy" y "hace N días" no dependan de la hora del test.
-    private val ahora = System.currentTimeMillis()
+    // Instante y zona FIJOS para que "hoy" y "hace N días" no dependan ni del
+    // reloj ni de la zona del dispositivo: lunes 09/11/2026 a las 12:00 en Madrid.
+    private val zona: ZoneId = ZoneId.of("Europe/Madrid")
+    private val ahora = ZonedDateTime.of(2026, 11, 9, 12, 0, 0, 0, zona).toInstant().toEpochMilli()
     private val dia = 24L * 60L * 60L * 1000L
+
+    /** Instante (ms) de una fecha y hora LOCAL en [zona]. */
+    private fun local(anyo: Int, mes: Int, diaMes: Int, h: Int, min: Int): Long =
+        ZonedDateTime.of(anyo, mes, diaMes, h, min, 0, 0, zona).toInstant().toEpochMilli()
 
     @Before
     fun preparar() {
@@ -139,7 +147,7 @@ class RepositorioRegistroTest {
 
     @Test
     fun estadisticasConTablaVaciaSonCero() = runBlocking<Unit> {
-        assertEquals(Estadisticas(0, 0, 0, 0, 0), repositorio.estadisticas(ahora = ahora))
+        assertEquals(Estadisticas.VACIAS, repositorio.estadisticas(ahora = ahora, zona = zona))
         assertTrue(repositorio.rankingReglas().isEmpty())
         assertTrue(repositorio.listarRecientes().isEmpty())
     }
@@ -157,9 +165,14 @@ class RepositorioRegistroTest {
         registrar(ahora, Accion.BLOQUEAR, "611", OrigenLlamada.SIMULADA)
 
         // Por defecto se excluyen las simulaciones.
+        // Hoy: 2 bloqueadas (400 y 611) y 1 permitida. 7 días: + el 400 de hace 3 días.
         assertEquals(
-            Estadisticas(total = 5, bloqueadas = 3, permitidas = 2, hoy = 3, ultimos7Dias = 4),
-            repositorio.estadisticas(ahora = ahora)
+            Estadisticas(
+                total = 5, bloqueadas = 3, permitidas = 2,
+                bloqueadasHoy = 2, permitidasHoy = 1,
+                bloqueadas7Dias = 3, permitidas7Dias = 1
+            ),
+            repositorio.estadisticas(ahora = ahora, zona = zona)
         )
         assertEquals(
             listOf(UsoRegla("400", 2), UsoRegla("611", 1)),
@@ -168,12 +181,37 @@ class RepositorioRegistroTest {
 
         // Con simulaciones las cifras cambian y el 611 pasa delante.
         assertEquals(
-            Estadisticas(total = 7, bloqueadas = 5, permitidas = 2, hoy = 5, ultimos7Dias = 6),
-            repositorio.estadisticas(incluirSimulaciones = true, ahora = ahora)
+            Estadisticas(
+                total = 7, bloqueadas = 5, permitidas = 2,
+                bloqueadasHoy = 4, permitidasHoy = 1,
+                bloqueadas7Dias = 5, permitidas7Dias = 1
+            ),
+            repositorio.estadisticas(incluirSimulaciones = true, ahora = ahora, zona = zona)
         )
         assertEquals(
             listOf(UsoRegla("611", 3), UsoRegla("400", 2)),
             repositorio.rankingReglas(incluirSimulaciones = true)
+        )
+    }
+
+    @Test
+    fun hoyEmpiezaALas00LocalesYSieteDiasSonDiasDeCalendario() = runBlocking<Unit> {
+        // ahora = 09/11/2026 12:00 (Madrid).
+        registrar(local(2026, 11, 9, 0, 0), Accion.BLOQUEAR, "400")      // 00:00 de hoy -> hoy
+        registrar(local(2026, 11, 9, 0, 0) - 1, Accion.BLOQUEAR, "400")  // 23:59:59.999 de ayer:
+                                                                         // dentro de las "últimas 24 h", pero NO es hoy
+        registrar(local(2026, 11, 3, 0, 0), Accion.PERMITIR, null)       // 00:00 de hace 6 días -> 7 días
+        registrar(local(2026, 11, 3, 0, 0) - 1, Accion.PERMITIR, null)   // 02/11 23:59: fuera de 7 días aunque
+                                                                         // sea posterior a "ahora - 7 × 24 h"
+        assertTrue(local(2026, 11, 3, 0, 0) - 1 > ahora - 7 * dia)
+
+        assertEquals(
+            Estadisticas(
+                total = 4, bloqueadas = 2, permitidas = 2,
+                bloqueadasHoy = 1, permitidasHoy = 0,
+                bloqueadas7Dias = 2, permitidas7Dias = 1
+            ),
+            repositorio.estadisticas(ahora = ahora, zona = zona)
         )
     }
 

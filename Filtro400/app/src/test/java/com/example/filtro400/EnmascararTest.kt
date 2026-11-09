@@ -27,9 +27,16 @@ class EnmascararTest {
     }
 
     @Test
+    fun unDigitoNoSeMuestra() {
+        assertEquals("***", Enmascarar.numero("1"))
+        assertEquals("***", Enmascarar.numero("7"))
+    }
+
+    @Test
     fun tramosDeLongitud() {
-        assertEquals("1***", Enmascarar.numero("1"))
+        assertEquals("1***", Enmascarar.numero("12"))
         assertEquals("1***", Enmascarar.numero("123"))
+        assertEquals("12***", Enmascarar.numero("1234"))
         assertEquals("12***", Enmascarar.numero("12345"))
         assertEquals("12***", Enmascarar.numero("123456"))
         assertEquals("1234***", Enmascarar.numero("1234567"))
@@ -60,6 +67,11 @@ class EnmascararTest {
             assertTrue(
                 "longitud $longitud: '$visible' no es prefijo de '$normalizado'",
                 normalizado.startsWith(visible)
+            )
+            // Siempre queda oculto al menos un carácter (también con 1 dígito).
+            assertTrue(
+                "longitud $longitud: se ven ${visible.length} de ${normalizado.length}",
+                visible.length < normalizado.length
             )
         }
     }

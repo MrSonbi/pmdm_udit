@@ -8,9 +8,10 @@ import com.example.filtro400.data.BaseDatos
 import com.example.filtro400.modelo.Accion
 import com.example.filtro400.modelo.TipoRegla
 import com.example.filtro400.util.Enmascarar
+import com.example.filtro400.util.Fechas
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Calendar
+import java.time.ZoneId
 
 /**
  * Acceso a la tabla `registro`. Se usa desde el servicio (tras responder)
@@ -27,14 +28,27 @@ class RepositorioRegistro(
     private val baseDatos: BaseDatos
 ) {
 
-    /** Resumen numérico para la pestaña de estadísticas. */
+    /**
+     * Resumen numérico para la pestaña de estadísticas. Bloqueadas y
+     * permitidas van SIEMPRE por separado: un total mezclado no dice nada útil.
+     *
+     * - "hoy": desde las 00:00 locales de hoy.
+     * - "7 días": hoy y los 6 días de calendario anteriores (desde las 00:00
+     *   locales de hace 6 días).
+     */
     data class Estadisticas(
         val total: Int,
         val bloqueadas: Int,
         val permitidas: Int,
-        val hoy: Int,
-        val ultimos7Dias: Int
-    )
+        val bloqueadasHoy: Int,
+        val permitidasHoy: Int,
+        val bloqueadas7Dias: Int,
+        val permitidas7Dias: Int
+    ) {
+        companion object {
+            val VACIAS = Estadisticas(0, 0, 0, 0, 0, 0, 0)
+        }
+    }
 
     /** Una entrada del ranking: cuántas veces ha decidido una regla. */
     data class UsoRegla(
@@ -118,46 +132,61 @@ class RepositorioRegistro(
     /**
      * Totales en UNA sola consulta (un único recorrido de la tabla).
      *
-     * - "hoy": desde las 00:00 locales del día de [ahora].
-     * - "últimos 7 días": desde `ahora - 7 días`.
+     * - "hoy": desde las 00:00 de [zona] del día de [ahora] ([Fechas.inicioDelDia]).
+     * - "últimos 7 días": hoy y los 6 días de calendario anteriores, desde las
+     *   00:00 de [zona] ([Fechas.inicioDelDiaHaceDias] con 6).
      *
-     * COALESCE: con la tabla vacía SUM devuelve NULL; así devolvemos 0.
+     * [ahora] y [zona] se inyectan para que los tests no dependan del reloj ni
+     * de la zona del dispositivo. COALESCE: con la tabla vacía SUM devuelve
+     * NULL; así devolvemos 0.
      */
     suspend fun estadisticas(
         incluirSimulaciones: Boolean = false,
-        ahora: Long = System.currentTimeMillis()
+        ahora: Long = System.currentTimeMillis(),
+        zona: ZoneId = ZoneId.systemDefault()
     ): Estadisticas = withContext(Dispatchers.IO) {
-        val inicioHoy = inicioDelDia(ahora)
-        val hace7Dias = ahora - 7L * MILIS_DIA
+        val inicioHoy = Fechas.inicioDelDia(ahora, zona)
+        val inicio7Dias = Fechas.inicioDelDiaHaceDias(ahora, 6, zona)
         val (filtro, argsFiltro) = filtroOrigen(incluirSimulaciones)
 
+        val decision = BaseDatos.COL_REG_DECISION
+        val fecha = BaseDatos.COL_REG_FECHA
         val sql = """
             SELECT
                 COUNT(*),
-                COALESCE(SUM(CASE WHEN ${BaseDatos.COL_REG_DECISION} = ? THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN ${BaseDatos.COL_REG_DECISION} = ? THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN ${BaseDatos.COL_REG_FECHA} >= ? THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN ${BaseDatos.COL_REG_FECHA} >= ? THEN 1 ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN $decision = ? THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN $decision = ? THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN $decision = ? AND $fecha >= ? THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN $decision = ? AND $fecha >= ? THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN $decision = ? AND $fecha >= ? THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN $decision = ? AND $fecha >= ? THEN 1 ELSE 0 END), 0)
             FROM ${BaseDatos.TABLA_REGISTRO}
             $filtro
         """.trimIndent()
+        val bloquear = Accion.BLOQUEAR.name
+        val permitir = Accion.PERMITIR.name
+        // El orden de los argumentos sigue el de los "?" de la consulta.
         val args = arrayOf(
-            Accion.BLOQUEAR.name,
-            Accion.PERMITIR.name,
-            inicioHoy.toString(),
-            hace7Dias.toString()
+            bloquear,
+            permitir,
+            bloquear, inicioHoy.toString(),
+            permitir, inicioHoy.toString(),
+            bloquear, inicio7Dias.toString(),
+            permitir, inicio7Dias.toString()
         ) + argsFiltro
 
         baseDatos.readableDatabase.rawQuery(sql, args).use { cursor ->
             if (!cursor.moveToFirst()) {
-                Estadisticas(0, 0, 0, 0, 0)
+                Estadisticas.VACIAS
             } else {
                 Estadisticas(
                     total = cursor.getInt(0),
                     bloqueadas = cursor.getInt(1),
                     permitidas = cursor.getInt(2),
-                    hoy = cursor.getInt(3),
-                    ultimos7Dias = cursor.getInt(4)
+                    bloqueadasHoy = cursor.getInt(3),
+                    permitidasHoy = cursor.getInt(4),
+                    bloqueadas7Dias = cursor.getInt(5),
+                    permitidas7Dias = cursor.getInt(6)
                 )
             }
         }
@@ -260,17 +289,6 @@ class RepositorioRegistro(
     private inline fun <reified E : Enum<E>> enumONull(nombre: String?): E? {
         if (nombre == null) return null
         return enumValues<E>().firstOrNull { it.name == nombre }
-    }
-
-    /** Medianoche local del día que contiene [instante]. */
-    private fun inicioDelDia(instante: Long): Long {
-        return Calendar.getInstance().apply {
-            timeInMillis = instante
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
     }
 
     companion object {

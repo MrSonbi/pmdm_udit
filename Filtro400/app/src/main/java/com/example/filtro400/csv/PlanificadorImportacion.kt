@@ -1,11 +1,17 @@
 package com.example.filtro400.csv
 
 import com.example.filtro400.ReglaBloqueo
-import com.example.filtro400.modelo.Accion
 import com.example.filtro400.modelo.Regla
 import com.example.filtro400.modelo.TipoRegla
 import com.example.filtro400.motor.ValidacionReglas
 
+/**
+ * Decide, SIN tocar la BD, qué hacer con cada fila del CSV: insertar,
+ * actualizar, omitir (sin cambios) o marcarla como error.
+ *
+ * Es Kotlin puro: se prueba en JVM y [com.example.filtro400.data.RepositorioReglas.aplicarPlan]
+ * solo ejecuta el plan resultante dentro de una transacción.
+ */
 object PlanificadorImportacion {
 
     fun planificarImportacion(existentes: List<Regla>, filas: List<FilaCsv>): PlanImportacion {
@@ -14,6 +20,9 @@ object PlanificadorImportacion {
         for (e in existentes) {
             mapaPorPatronNormalizado[ReglaBloqueo.normalizar(e.patron)] = e
         }
+        // Patrones de filas VÁLIDAS ya planificadas. Solo se añade tras validar:
+        // una fila inválida no "ocupa" el patrón y no convierte en duplicada
+        // a una fila válida posterior con el mismo patrón.
         val vistoEnFichero = HashSet<String>()
 
         for (fila in filas) {
@@ -28,7 +37,6 @@ object PlanificadorImportacion {
                     operaciones.add(OperacionCsv.Error(numeroLinea, "duplicado en el fichero"))
                     continue
                 }
-                vistoEnFichero.add(patronNormalizadoFila)
 
                 if (fila.tipo == TipoRegla.PREFIJO) {
                     val digitos = patronNormalizadoFila.count { it.isDigit() }
@@ -52,30 +60,32 @@ object PlanificadorImportacion {
                     accion = fila.accion,
                     prioridad = prioridadFinal
                 )
-
-                val existeEnBd = mapaPorPatronNormalizado.containsKey(patronNormalizadoFila)
-
                 if (!validacion.esValida) {
                     operaciones.add(OperacionCsv.Error(numeroLinea, validacion.error ?: "inválido"))
                     continue
                 }
 
-                val patronParaGuardar = validacion.patron ?: patronNormalizadoFila
-                val prioridadParaGuardar = if (validacion.esValida) validacion.prioridad else prioridadFinal
-                val activa = fila.activa
+                // A partir de aquí la fila es válida: ya cuenta como "vista".
+                vistoEnFichero.add(patronNormalizadoFila)
 
-                if (existeEnBd) {
-                    val reglaExistente = mapaPorPatronNormalizado[patronNormalizadoFila]!!
+                val patronParaGuardar = validacion.patron ?: patronNormalizadoFila
+                val reglaExistente = mapaPorPatronNormalizado[patronNormalizadoFila]
+
+                if (reglaExistente != null) {
+                    // Etiqueta vacía o ausente en el CSV -> se conserva la existente.
                     val etiquetaCsvLimpia = fila.etiqueta?.trim()?.ifEmpty { null }
-                    val etiquetaNueva = if (etiquetaCsvLimpia == null && fila.etiqueta?.trim()?.isEmpty() == true) {
-                        reglaExistente.etiqueta
-                    } else if (fila.etiqueta == null) {
-                        reglaExistente.etiqueta
-                    } else {
-                        etiquetaCsvLimpia
-                    }
-                    val activaNueva = activa ?: reglaExistente.activa
-                    val prioridadParaActualizar = if (fila.prioridad == null) reglaExistente.prioridad else prioridadParaGuardar
+                    val etiquetaNueva = etiquetaCsvLimpia ?: reglaExistente.etiqueta
+                    val activaNueva = fila.activa ?: reglaExistente.activa
+                    // Prioridad vacía en el CSV:
+                    //  - misma acción  -> se conserva la prioridad existente;
+                    //  - acción nueva  -> prioridad por defecto de la NUEVA acción
+                    //    (si no, un BLOQUEAR 0 pasado a PERMITIR seguiría en 0).
+                    val prioridadParaActualizar = fila.prioridad
+                        ?: if (fila.accion == reglaExistente.accion) {
+                            reglaExistente.prioridad
+                        } else {
+                            ValidacionReglas.prioridadPorDefecto(fila.accion)
+                        }
                     if (reglaExistente.tipo == fila.tipo &&
                         reglaExistente.accion == fila.accion &&
                         reglaExistente.prioridad == prioridadParaActualizar &&
@@ -105,29 +115,31 @@ object PlanificadorImportacion {
                         activa = activaNueva
                     )
                 } else {
-                    val prioridadAlta = fila.prioridad ?: ValidacionReglas.prioridadPorDefecto(fila.accion)
+                    val etiquetaNueva = fila.etiqueta?.trim()?.ifEmpty { null }
+                    val activaNueva = fila.activa ?: true
+                    // Alta: validar ya devolvió la prioridad del CSV o la de por defecto.
+                    val prioridadNueva = validacion.prioridad
                     operaciones.add(
                         OperacionCsv.Insertar(
                             numeroLineaOriginal = numeroLinea,
                             patron = patronParaGuardar,
-                            etiqueta = fila.etiqueta?.trim()?.ifEmpty { null },
+                            etiqueta = etiquetaNueva,
                             tipo = fila.tipo,
                             accion = fila.accion,
-                            prioridad = prioridadAlta,
-                            activa = activa ?: true
+                            prioridad = prioridadNueva,
+                            activa = activaNueva
                         )
                     )
-                    val nuevaRegla = Regla(
+                    mapaPorPatronNormalizado[patronNormalizadoFila] = Regla(
                         id = -1,
                         patron = patronParaGuardar,
-                        etiqueta = fila.etiqueta?.trim()?.ifEmpty { null },
-                        activa = activa ?: true,
+                        etiqueta = etiquetaNueva,
+                        activa = activaNueva,
                         creadaEn = 0,
                         tipo = fila.tipo,
                         accion = fila.accion,
-                        prioridad = prioridadAlta
+                        prioridad = prioridadNueva
                     )
-                    mapaPorPatronNormalizado[patronNormalizadoFila] = nuevaRegla
                 }
             } catch (e: Exception) {
                 operaciones.add(OperacionCsv.Error(numeroLinea, "inválido"))

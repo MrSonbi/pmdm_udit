@@ -26,24 +26,17 @@ class ImportadorCsv(
         val mensaje: String
     )
 
-    suspend fun importar(filas: List<FilaCsv>): ResultadoImportacion = withContext(Dispatchers.IO) {
-        procesarLineas(filas)
-    }
-
-    fun procesarLineas(filas: List<FilaCsv>): ResultadoImportacion {
-        val plan = PlanificadorImportacion.planificarImportacion(repositorioReglas.listarTodas(), filas)
-        return repositorioReglas.aplicarPlan(plan)
-    }
-
     suspend fun importarDesdeStream(inputStream: InputStream): ResultadoImportacion = withContext(Dispatchers.IO) {
         try {
             val resultadoParseo = CsvCodec.leerConResultado(inputStream)
             val erroresParseo = resultadoParseo.errores.map { ErrorLinea(it.numeroLineaOriginal, it.motivo) }
             val plan = PlanificadorImportacion.planificarImportacion(repositorioReglas.listarTodas(), resultadoParseo.filas)
+            // aplicarPlan devuelve TODOS los errores del plan, sin recortar.
             val res = repositorioReglas.aplicarPlan(plan)
-            // fusionar errores de parseo y del plan, ordenados por nº de línea
+            // Se juntan errores de parseo y del plan, se ordenan por línea y se
+            // recortan UNA sola vez ("y N más" sobre el total real).
             val todosErrores = (erroresParseo + res.errores).sortedBy { it.numeroLinea }
-            return@withContext res.copy(errores = todosErrores.take(50) + if (todosErrores.size > 50) listOf(ErrorLinea(0, "y ${todosErrores.size - 50} más")) else emptyList())
+            return@withContext res.copy(errores = RecorteErrores.recortar(todosErrores))
         } catch (e: CancellationException) {
             throw e
         } catch (e: LimiteTamanoExcedidoException) {
