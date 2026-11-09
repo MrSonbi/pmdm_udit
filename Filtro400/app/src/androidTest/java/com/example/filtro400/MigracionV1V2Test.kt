@@ -7,6 +7,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.example.filtro400.data.BaseDatos
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -68,7 +70,7 @@ class MigracionV1V2Test {
         reglas.forEach { regla ->
             db.execSQL(
                 "INSERT INTO reglas (patron, etiqueta, activa, creada_en) VALUES (?, ?, ?, ?)",
-                arrayOf(regla.patron, regla.etiqueta, regla.activa, regla.creadaEn)
+                arrayOf<Any?>(regla.patron, regla.etiqueta, regla.activa, regla.creadaEn)
             )
         }
         db.version = 1
@@ -268,21 +270,43 @@ class MigracionV1V2Test {
     @Test
     fun esquemaMigradoEsIgualAlDeUnaInstalacionNueva() {
         crearBaseDatosV1(listOf(ReglaV1("400", "Comerciales", 1, 1_000L))).close()
+        // La "instalación nueva" todavía no existe en disco.
+        assertFalse(contexto.getDatabasePath(nombreV2).exists())
 
         val bdMigrada = BaseDatos(contexto, nombreV1)
-        val esquemaMigrado = try {
-            esquemaLogico(bdMigrada.readableDatabase)
+        val bdNueva = BaseDatos(contexto, nombreV2)
+        try {
+            val dbMigrada = bdMigrada.readableDatabase
+            val dbNueva = bdNueva.readableDatabase
+
+            // ANTES de comparar esquemas: deben ser dos ficheros distintos.
+            // (Con el singleton oculto que tenía BaseDatos, las dos podían
+            // ser el mismo fichero y la comparación salía "igual" por error.)
+            assertEquals(nombreV1, bdMigrada.databaseName)
+            assertEquals(nombreV2, bdNueva.databaseName)
+            assertEquals(contexto.getDatabasePath(nombreV1).absolutePath, dbMigrada.path)
+            assertEquals(contexto.getDatabasePath(nombreV2).absolutePath, dbNueva.path)
+            assertNotEquals(dbMigrada.path, dbNueva.path)
+
+            // Y sus DATOS lo confirman: la migrada conserva la etiqueta de la v1
+            // y la nueva trae la semilla de onCreate.
+            assertEquals(listOf("Comerciales"), etiquetasDe(dbMigrada))
+            assertEquals(listOf("Llamadas comerciales España"), etiquetasDe(dbNueva))
+
+            assertEquals(esquemaLogico(dbNueva), esquemaLogico(dbMigrada))
         } finally {
             bdMigrada.close()
-        }
-
-        val bdNueva = BaseDatos(contexto, nombreV2)
-        val esquemaNuevo = try {
-            esquemaLogico(bdNueva.readableDatabase)
-        } finally {
             bdNueva.close()
         }
+    }
 
-        assertEquals(esquemaNuevo, esquemaMigrado)
+    private fun etiquetasDe(db: SQLiteDatabase): List<String?> {
+        val etiquetas = mutableListOf<String?>()
+        db.rawQuery("SELECT etiqueta FROM reglas ORDER BY id", null).use { cursor ->
+            while (cursor.moveToNext()) {
+                etiquetas += if (cursor.isNull(0)) null else cursor.getString(0)
+            }
+        }
+        return etiquetas
     }
 }

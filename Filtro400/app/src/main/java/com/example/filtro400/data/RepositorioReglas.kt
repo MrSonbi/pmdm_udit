@@ -18,10 +18,15 @@ import com.example.filtro400.motor.ValidacionReglas
  * La copia se carga la primera vez que se pide y se refresca después de cada
  * alta, edición, baja o cambio de estado. El acceso a la BD desde la UI se
  * hace en Dispatchers.IO.
+ *
+ * En producción se obtiene con [obtener]; los tests crean la suya con
+ * `RepositorioReglas(BaseDatos(contexto, "test_xxx.db"))`.
  */
-class RepositorioReglas @JvmOverloads constructor(contexto: Context? = null) {
-
-    private val baseDatos = BaseDatos((contexto ?: throw IllegalArgumentException("contexto requerido")).applicationContext)
+class RepositorioReglas(
+    // La BD se inyecta: en producción llega de AlmacenDatos (filtro400.db) y
+    // en los tests instrumentados es una BaseDatos propia ("test_xxx.db").
+    private val baseDatos: BaseDatos
+) {
 
     // @Volatile: el hilo del servicio y el de la UI ven siempre la última copia.
     @Volatile
@@ -258,10 +263,13 @@ class RepositorioReglas @JvmOverloads constructor(contexto: Context? = null) {
         @Volatile
         private var instancia: RepositorioReglas? = null
 
-        /** Devuelve la instancia única usando siempre el contexto de la aplicación. */
+        /**
+         * Instancia única de producción. La BD sale SIEMPRE de [AlmacenDatos],
+         * que es el único que conoce el nombre de la BD real.
+         */
         fun obtener(contexto: Context): RepositorioReglas {
             return instancia ?: synchronized(this) {
-                instancia ?: RepositorioReglas(contexto.applicationContext).also { instancia = it }
+                instancia ?: RepositorioReglas(AlmacenDatos.obtener(contexto)).also { instancia = it }
             }
         }
     }

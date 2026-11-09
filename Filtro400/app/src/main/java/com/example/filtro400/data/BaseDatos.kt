@@ -15,31 +15,21 @@ import android.database.sqlite.SQLiteOpenHelper
  *  - v1 (Fase 2): tabla `reglas` con patrón, etiqueta, activa y fecha.
  *  - v2 (Fase 3): reglas con tipo/acción/prioridad y tabla `registro` de actividad.
  *
- * El nombre de la base de datos se puede inyectar para que los tests
- * instrumentados trabajen sobre una copia y NUNCA toquen la BD real de la app.
+ * Es un SQLiteOpenHelper NORMAL: cada objeto abre exactamente el fichero
+ * cuyo nombre recibe. No guarda ninguna instancia estática.
+ *
+ * - En producción NO se construye directamente: se pide a [AlmacenDatos.obtener],
+ *   que crea una única BaseDatos con [NOMBRE_BD] para todo el proceso.
+ * - Los tests instrumentados crean la suya con un nombre propio
+ *   (`test_xxx.db`) y así NUNCA tocan `filtro400.db`.
+ *
+ * El nombre es obligatorio (sin valor por defecto) para que nadie abra la BD
+ * real "sin querer" escribiendo `BaseDatos(contexto)`.
  */
 class BaseDatos(
     contexto: Context,
-    nombreBd: String = NOMBRE_BD
-) : SQLiteOpenHelper(
-    contexto.applicationContext,
-    if (instancia != null && nombreBd == NOMBRE_BD) NOMBRE_BD else if (instancia != null && nombreBd != NOMBRE_BD) {
-        // Si ya existe una instancia, ignoramos el nombreBd solicitado para mantener el singleton
-        instancia?.databaseName ?: nombreBd
-    } else {
-        nombreBd
-    },
-    null,
-    VERSION_BD
-) {
-
-    init {
-        synchronized(BaseDatos::class.java) {
-            if (instancia == null) {
-                instancia = this
-            }
-        }
-    }
+    nombreBd: String
+) : SQLiteOpenHelper(contexto.applicationContext, nombreBd, null, VERSION_BD) {
 
     /**
      * Instalación nueva: se crea directamente el esquema v2 completo.
@@ -101,9 +91,6 @@ class BaseDatos(
     }
 
     companion object {
-        @Volatile
-        private var instancia: BaseDatos? = null
-
         const val VERSION_BD = 2
         const val NOMBRE_BD = "filtro400.db"
 
