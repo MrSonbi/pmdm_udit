@@ -1,111 +1,138 @@
-# FASE 3 — Filtro 400
+# Fase 3 — Sistema completo de filtrado
 
-> Documento de cierre (paso 10, 09/11/2026). Cada afirmación se ha comprobado leyendo el código
-> indicado o con una salida real guardada en `docs/evidencias/`.
+## Qué incluye
 
-## a) Decisiones técnicas
+La app tiene cuatro pantallas (Inicio, Reglas, Actividad y Ajustes) y estas funciones:
 
-### Organización por capas (`app/src/main/java/com/example/filtro400/`)
-| Paquete | Contenido | Depende de |
-|---|---|---|
-| `modelo/` | `Regla`, `Accion`, `TipoRegla` | solo `ReglaBloqueo` |
-| `motor/` | `MotorFiltrado`, `Decision`, `ValidacionReglas` (Kotlin puro, sin Android) | `modelo/`, `ReglaBloqueo` (nunca `data/`) |
-| `data/` | `BaseDatos`, `AlmacenDatos`, `RepositorioReglas`, `MapeoRegla` | `modelo/`, `motor.ValidacionReglas`; `aplicarPlan` usa los tipos del plan de `csv/` |
-| `datos/` | `Preferencias` (`SharedPreferences`) | — |
-| `registro/` | `RepositorioRegistro`, `RegistroLlamada`, `OrigenLlamada` | `data/`, `modelo/`, `util/` |
-| `csv/` | `CsvCodec`, `ExportadorCsv`, `PlanificadorImportacion` (puro), `ImportadorCsv`, `RecorteErrores`, `TextoImportacion` | `modelo/`, `motor/`, `data/` (solo `ImportadorCsv`) |
-| `ui/` | Pantallas Compose (5 pestañas); `MainActivity` solo monta `PantallaInicio` | las demás |
-| `util/` | `Enmascarar`, `Fechas` (puros) | `ReglaBloqueo` |
+1. **Reglas:** números concretos y prefijos, cada uno con una acción (bloquear o permitir), una prioridad y un estado (activa o pausada). Se pueden crear, editar, borrar y pausar.
+2. **Lista blanca:** reglas que permiten siempre, para que una llamada concreta entre aunque haya un bloqueo.
+3. **Prioridades:** cada regla tiene una prioridad de 0 a 100 que decide los conflictos.
+4. **Registro de actividad:** cada llamada que filtra la app queda anotada, con el número enmascarado.
+5. **Importar y exportar** las reglas en CSV.
+6. **Estadísticas:** llamadas bloqueadas y permitidas hoy y en los últimos 7 días, y las reglas que más bloquean.
+7. **Simulador:** prueba un número sin recibir una llamada, con el mismo motor que usa el servicio real.
 
-`ReglaBloqueo.normalizar()` es la única normalización (motor, `Enmascarar`, UI y CSV).
+Se conserva todo lo anterior: el `400` sigue bloqueando por defecto.
 
-### Tablas y migración v1 → v2 (`data/BaseDatos.kt`, `VERSION_BD = 2`)
-- `reglas`: `id, patron (UNIQUE), etiqueta, activa, creada_en, tipo, accion, prioridad`.
-- `registro`: `id, fecha, numero_enmascarado, decision, regla_id, regla_patron, regla_tipo,
-  regla_prioridad, motivo, origen` con `CHECK (origen IN ('REAL','SIMULADA'))` e índices en
-  `fecha` y `regla_id`. Guarda copia del patrón/tipo/prioridad para que el historial siga legible
-  si la regla se borra.
-- `onUpgrade` (v1 → v2): tres `ALTER TABLE ... ADD COLUMN` con valores por defecto `PREFIJO`,
-  `BLOQUEAR`, `0` (las reglas antiguas se comportan igual que en la Fase 2) y `CREATE TABLE
-  registro` + índices. **Sin `DROP`** y **sin re-sembrar el 400**: la semilla está solo en
-  `onCreate`, que crea directamente el esquema v2 completo en instalaciones nuevas.
+## Decisiones técnicas
 
-### Conflicto lista blanca / bloqueo (`motor/MotorFiltrado.evaluar`)
-1. Número normalizado vacío (oculto) → `PERMITIR` sin mirar reglas.
-2. Candidatas: reglas activas con patrón no vacío; `NUMERO` coincide si es igual, `PREFIJO` si el
-   número empieza por el patrón. Sin candidatas → `PERMITIR`.
-3. Orden: `prioridad` descendente → `NUMERO` antes que `PREFIJO` → patrón más largo → en empate
-   absoluto, `PERMITIR` antes que `BLOQUEAR`. Gana la primera.
-- Prioridad por defecto (`ValidacionReglas.prioridadPorDefecto`): `BLOQUEAR` = 0, `PERMITIR` = 100,
-  así una regla de lista blanca creada sin prioridad gana al bloqueo por defecto.
+### 1. Cómo separé interfaz, base de datos y motor
 
-### Rendimiento durante la llamada (`FiltroLlamadasService.onScreenCall`)
-- Las reglas salen de `RepositorioReglas.reglasActivas()`: caché `@Volatile` en memoria; solo
-  consulta SQLite si aún no está cargada (primera llamada del proceso). Cada alta, edición, cambio
-  de activa, borrado o importación la refresca. No hay red.
-- Se calcula la decisión y se responde **una sola vez** con `respondToCall`; **después**, en
-  `try/catch` separados, se loguea (número enmascarado) y, si el ajuste está activo, se inserta en
-  el registro de forma síncrona (`insertarSincrono`).
-- Fail-open: cualquier excepción antes de responder deja `bloquear = false`.
+- `modelo/`: `Regla`, `Accion` y `TipoRegla`. Kotlin puro.
+- `motor/`: `MotorFiltrado` (la decisión) y `ValidacionReglas`. Kotlin puro, sin Android ni base de datos, por eso se prueban con JUnit en el ordenador.
+- `data/`: `BaseDatos` (`SQLiteOpenHelper`), `AlmacenDatos` (el único sitio que crea la base de datos) y `RepositorioReglas` (CRUD y copia en memoria).
+- `registro/`: `RepositorioRegistro`.
+- `csv/`: lectura, exportación y planificador de la importación.
+- `ui/`: pantallas de Compose y el tema visual.
+- `util/`: `Enmascarar`.
+- `FiltroLlamadasService` y `MainActivity` siguen en el paquete raíz porque el Manifest las referencia por nombre.
 
-### Privacidad
-- Se guarda: fecha, número **enmascarado**, decisión, datos de la regla aplicada, motivo y origen.
-  `insertarSincrono` aplica `Enmascarar.numero` antes de escribir; el número completo no llega a la
-  BD ni a Logcat (`Log.w` del fallo al responder solo incluye el nombre de la clase de excepción).
-- `Enmascarar`: vacío → "(oculto)"; si no, prefijo visible + `***` (1 carácter → 0 visibles;
-  2-3 → 1; 4-6 → 2; resto → `min(6, longitud − 3)`); siempre queda oculto al menos uno.
-- Retención: al abrir la app (`LaunchedEffect` en `PantallaInicio`) se llama a
-  `borrarMasAntiguosDe(30)`; también hay borrado manual con confirmación.
-- Ajuste "Guardar registro" en `SharedPreferences` (`datos/Preferencias`, activo por defecto): si
-  está apagado, el servicio no inserta nada. Las simulaciones solo se guardan si se enciende el
-  interruptor del Simulador (apagado por defecto) y se marcan con origen `SIMULADA`.
+### 2. Estructura de tablas
 
-### Cómo se valida una actualización de filtros
-- **Tests JVM** del motor, validación, CSV, fechas y enmascarado (sin Android).
-- **Tests instrumentados** con BD temporal: cada test crea `BaseDatos(contexto, "test_xxx.db")` y la
-  inyecta en los repositorios; ninguno abre `filtro400.db`. `MigracionV1V2Test` crea una BD v1 y
-  comprueba datos, valores por defecto, que no reaparece el 400 y que el esquema migrado es igual al
-  de una instalación nueva.
-- **Importación CSV**: `PlanificadorImportacion` calcula el plan (puro) y
-  `RepositorioReglas.aplicarPlan` lo ejecuta en **una transacción** (`beginTransaction` /
-  `setTransactionSuccessful` / `endTransaction`); si falla una operación hay rollback y no cambia
-  ninguna regla (`AplicarPlanTest.fallaAMitadYHaceRollbackCompleto`). Importar añade o actualiza,
-  nunca borra. Límites: 1 MB, 5000 filas y 1000 caracteres por línea (`CsvCodec`).
+**`reglas`**: `id`, `patron` (único, normalizado), `etiqueta`, `activa`, `creada_en`, `tipo` (`PREFIJO` o `NUMERO`), `accion` (`BLOQUEAR` o `PERMITIR`) y `prioridad`.
 
-## b) Dificultades encontradas
-- **Singleton oculto en `BaseDatos`.** Una versión anterior guardaba la primera instancia en un
-  campo estático e ignoraba el nombre de las siguientes, así que los tests instrumentados podían
-  compartir fichero y pisarse. Solución: `BaseDatos` es un `SQLiteOpenHelper` normal con nombre
-  obligatorio; producción la obtiene solo de `AlmacenDatos.obtener` (`filtro400.db`) y los
-  repositorios la reciben por constructor. `AislamientoBaseDatosTest` lo comprueba.
-- **Contadores e informe de errores del importador CSV incorrectos.** Los errores se recortaban a
-  50 en `aplicarPlan` y otra vez en `ImportadorCsv` (y la UI a 10): la línea "y N más" entraba en el
-  segundo recorte y N salía mal. Ahora hay un único recorte (`RecorteErrores`) y
-  `ResultadoImportacion.erroneas` es el total real calculado antes de recortar. Además, un patrón
-  solo cuenta como "visto" si su fila pasa la validación, para que una fila inválida no convierta en
-  duplicada a una válida posterior.
-- **"Hoy" y el cambio de hora.** Con "ahora − 24 h" o con UTC, "hoy" incluía llamadas de ayer y los
-  días de 23 h/25 h fallaban. `util/Fechas` usa `LocalDate.minusDays` y `atStartOfDay(zona)`.
+**`registro`**: `id`, `fecha`, `numero_enmascarado`, `decision`, `regla_id`, `regla_patron`, `regla_tipo`, `regla_prioridad`, `motivo` y `origen` (`REAL` o `SIMULADA`, con `CHECK`). Guarda una copia del patrón de la regla para que el historial siga siendo legible aunque la regla se borre. Tiene índices en `fecha` y en `regla_id`.
 
-## c) Pruebas
-- Comando (09/11/2026): `.\gradlew.bat clean testDebugUnitTest assembleDebug assembleDebugAndroidTest`
-  → **BUILD SUCCESSFUL**, código de salida 0. Salida completa en `docs/evidencias/gradle-fase3.txt`.
-- **JVM: 15 suites, 105 tests, 0 fallos, 0 errores, 0 omitidos** (recuento por suite leído de los
-  XML en `docs/evidencias/tests-jvm-fase3.txt`).
-- **Instrumentados** (21 tests: `MigracionV1V2Test` 4, `AislamientoBaseDatosTest` 3,
-  `AplicarPlanTest` 3, `RepositorioRegistroTest` 10, `ExampleInstrumentedTest` 1): compilados con
-  `assembleDebugAndroidTest`; los ejecuta el alumno con `connectedDebugAndroidTest`.
-- APK: `app/build/outputs/apk/debug/app-debug.apk`.
-- Pruebas manuales en el emulador: checklist en `docs/PRUEBAS_MANUALES.md`.
+**Migración de la versión 1 a la 2.** Usa `ALTER TABLE ... ADD COLUMN` con valores por defecto (`PREFIJO`, `BLOQUEAR`, 0), sin `DROP` ni reconstruir la tabla, así que las reglas de la Fase 2 siguen bloqueando igual. No se vuelve a sembrar el `400`: si el usuario lo había borrado, sigue borrado (la semilla es solo de `onCreate`). `onCreate` crea ya el esquema completo de la versión 2 porque `SQLiteOpenHelper` no llama a `onUpgrade` en una instalación nueva.
 
-## d) Limitaciones conocidas
-- Android solo entrega al servicio las llamadas de números que **no** están en la agenda. Tampoco se
-  asume que lleguen todas las demás: el sistema decide cuándo invocar el servicio; la app solo
-  actúa sobre las que recibe.
-- No se puede volver a una versión anterior con la BD v2: `BaseDatos` no sobrescribe
-  `onDowngrade` y `SQLiteOpenHelper` no permite bajar de versión.
-- Una etiqueta vacía en el CSV conserva la existente (`etiquetaCsvLimpia ?: etiqueta existente`):
-  el CSV no puede borrar etiquetas ni reglas.
-- Un fichero de exactamente 1 MB también se rechaza (`LimitadorBytesInputStream`).
-- El interruptor del Simulador no se recuerda entre ejecuciones (vuelve a apagado).
-- No se han implementado ampliaciones opcionales.
+**`patron` sigue siendo único.** Un mismo patrón no puede estar a la vez en bloqueo y en lista blanca; para cambiarlo se edita la regla. Cambiar la restricción `UNIQUE` obligaría a reconstruir la tabla.
+
+### 3. Conflicto entre lista blanca y bloqueo
+
+`MotorFiltrado.evaluar` es una función pura. Descarta las reglas pausadas y las que no coinciden, y entre las que quedan decide así:
+
+| Orden | Criterio |
+|---|---|
+| 1 | Gana la mayor prioridad |
+| 2 | En empate, el número exacto antes que el prefijo |
+| 3 | En empate, el patrón más largo |
+| 4 | En empate total, `PERMITIR` |
+
+Si ninguna regla coincide, o el número está oculto, la llamada pasa. Por defecto las reglas que permiten nacen con prioridad 100 y las que bloquean con 0, así que la lista blanca gana salvo que el usuario cambie la prioridad. Ejemplo (números ficticios): con "bloquear prefijo 400" y "permitir el número 400555123", la llamada de ese número entra y el resto de los 400 se bloquean.
+
+### 4. Cómo evito consultas lentas durante la llamada
+
+- `onScreenCall` no consulta SQLite ni usa la red: lee la copia en memoria de las reglas activas. La base de datos solo se lee la primera vez que el proceso necesita las reglas, y la copia se recarga una sola vez tras cada cambio.
+- La respuesta (`respondToCall`) se envía primero. El registro se escribe después, con una inserción síncrona de una fila dentro de un `try/catch`. Es síncrona a propósito: tras responder, el sistema puede desvincular el servicio y una corrutina podría cancelarse y perder el registro.
+- Si cualquier cosa falla, la llamada se deja pasar (fail-open). Un error al registrar nunca cambia la decisión.
+- El ajuste «guardar registro» se lee de `SharedPreferences`, no de SQLite.
+
+### 5. Cómo compruebo que un cambio de filtros no da errores
+
+- La validación y el motor son funciones puras con tests JVM, incluidos los casos límite (prefijo vacío, prioridad fuera de rango, empates).
+- La importación de CSV primero **planifica** (función pura, con tests) y después **aplica** el plan en una única transacción: si algo falla, se deshace todo y no cambia nada.
+- La migración tiene tests instrumentados con una base de datos temporal y una prueba manual en el emulador: con la app de la Fase 2 añadí una regla propia (`+34 600`) y borré el `400`; tras instalar encima la versión nueva, la regla seguía y el `400` no reapareció.
+- Las filas de la base de datos con valores inválidos (tipo o prioridad desconocidos) se omiten al cargar la caché, para que una fila mala no estropee las demás.
+
+### 6. Qué se guarda de las llamadas
+
+Se guarda: fecha, número **enmascarado**, decisión, regla aplicada (patrón, tipo y prioridad), motivo y si fue real o simulada. No se guardan nombres, datos de la agenda ni duración.
+
+- El enmascarado se aplica **dentro** del repositorio del registro, no depende de quien lo llame. Deja visible solo un prefijo corto (como mucho 6 caracteres) y sustituye el resto por asteriscos; nunca devuelve el número original (un test lo comprueba con números de 1 a 15 dígitos).
+- El usuario puede desactivar el registro y borrarlo con confirmación. Además se borra solo lo que tiene más de 30 días al abrir la app.
+- Los logs nunca llevan el número; ante un error solo se escribe el tipo de excepción.
+
+## Otras decisiones
+
+**CSV.** Columnas `patron;tipo;accion;prioridad;activa;etiqueta`, con cabecera y `;` (se abre bien en Excel en español). Al importar:
+
+- Se detecta `;` o `,` y se tolera la cabecera.
+- Límites: 1 MB (contando los bytes realmente leídos), 5000 filas y 1000 caracteres por línea.
+- Cada fila se valida con la misma validación que la interfaz. Los errores de una fila (tipo desconocido, prioridad fuera de rango, prefijo de 2 dígitos o menos, patrón repetido en el fichero) no detienen el resto y se listan con su número de línea (máximo 50 y «y N más»).
+- Un patrón que ya existe se actualiza; si la etiqueta o la prioridad vienen vacías, se conservan las existentes.
+- El resumen muestra añadidas, actualizadas, omitidas y erróneas.
+
+**Estadísticas.** «Hoy» cuenta desde las 00:00 de la hora local (función pura con la zona horaria como parámetro, con tests). Las bloqueadas y las permitidas se muestran por separado. El ranking de reglas se ordena por número de llamadas y, en empate, por patrón, para que el resultado sea siempre el mismo. Las simulaciones quedan fuera salvo que se active «Mostrar pruebas».
+
+**Simulador.** Está en «Probar un número» (Inicio). Pasa el número por el mismo `MotorFiltrado` y las mismas reglas en memoria que el servicio, y explica el resultado con una frase. Opcionalmente guarda la prueba en el registro marcada como simulada.
+
+**Diseño.** Rediseño neumórfico (soft UI) hecho a mano con Compose y sin librerías: sombra clara y oscura con `drawBehind`, tarjetas y botones elevados, campos hundidos. Pensado para que sea simple: cuatro pestañas, frases llanas («Bloquea llamadas que empiezan por 400»), una acción principal por pantalla, y los estados siempre en texto (Activa, Bloquea, Permite) y no solo en color o sombra.
+
+## Dificultades encontradas
+
+- **Tests que se pisaban.** Los tests instrumentados pasaban uno a uno pero fallaban juntos. La causa era un singleton oculto en `BaseDatos`: si ya existía una instancia, ignoraba el nombre de base de datos pedido y abría el fichero de la primera. Los tests de migración veían una base de datos recién creada. Lo resolví dejando `BaseDatos` como un helper normal, con el singleton solo en `AlmacenDatos`, inyectando la base de datos a los repositorios y añadiendo un test de regresión (`AislamientoBaseDatosTest`). Pasan dos ejecuciones seguidas.
+- **Importador de CSV.** La primera versión informaba de fallo cuando la importación había ido bien, leía las columnas en otro orden que el formato acordado, abortaba todo por un error en una fila y recortaba la lista de errores dos veces. Lo rehice separando planificar y aplicar, con tests de cada caso.
+- **Interfaz.** Con una descripción larga, los botones de la tarjeta de reglas se desbordaban y «Eliminar» desaparecía. En el primer rediseño, además, la barra inferior ocupaba toda la pantalla. Se corrigió acotando alturas y moviendo el borrado a la pantalla de edición.
+- **Git.** Para compilar el APK de la Fase 2 creé una copia de trabajo (`git worktree`) dentro del propio repositorio y GitHub la mostró como una carpeta enlazada. La quité con `git rm --cached` y compilo esa copia fuera del repositorio.
+- **Proceso.** Trabajé con un asistente de código (opencode). Sus informes no siempre coincidían con el código: decía tener cinco pestañas y había tres, y un caso especial en `Enmascarar` hacía pasar un test. Por eso comprobé cada paso yo mismo: compilación desde cero, recuento de tests desde los XML, tests instrumentados dos veces seguidas y lectura del código.
+
+## Pruebas
+
+**Automáticas.**
+
+- Tests JVM (`testDebugUnitTest`): 105 sin fallos antes del rediseño visual, en 15 suites: motor, validación, normalización, enmascarado, fechas, mapeo de reglas, codec CSV, planificador de importación, recorte de errores y textos de la importación. Total tras el rediseño: 
+com.example.filtro400.EnmascararTest 5 0 0
+com.example.filtro400.ExampleUnitTest 1 0 0
+com.example.filtro400.FechasTest 7 0 0
+com.example.filtro400.MapeoReglaTest 3 0 0
+com.example.filtro400.MotorFiltradoFase3Test 11 0 0
+com.example.filtro400.MotorFiltradoTest 7 0 0
+com.example.filtro400.ReglaBloqueoTest 7 0 0
+com.example.filtro400.ValidacionReglasFase3Test 6 0 0
+com.example.filtro400.ValidacionReglasTest 12 0 0
+com.example.filtro400.csv.CsvCodecTest 10 0 0
+com.example.filtro400.csv.ExportadorImportadorRoundTripTest 2 0 0
+com.example.filtro400.csv.PlanificadorImportacionTest 21 0 0
+com.example.filtro400.csv.RecorteErroresTest 4 0 0
+com.example.filtro400.csv.ResumenPlanTest 4 0 0
+com.example.filtro400.csv.TextoImportacionTest 5 0 0
+com.example.filtro400.ui.PaletaNeuTest 7 0 0
+com.example.filtro400.ui.TextosEtapa2Test 8 0 0
+com.example.filtro400.ui.TextosTest 7 0 0
+TOTAL tests/fallos/errores: 127 0 0.
+- Tests instrumentados (emulador, base de datos temporal): 21 sin fallos, ejecutados dos veces seguidas. Migración (4), registro (10), `aplicarPlan` con éxito y rollback (3), aislamiento de bases de datos (3) y el de ejemplo (1).
+
+**Manuales** (emulador de Android Studio, números ficticios): llamada entrante simulada con la app cerrada, cambio de regla en caliente, lista blanca que gana al bloqueo, ajuste de guardar registro y borrado del registro, estadísticas, exportar e importar CSV (ida y vuelta, y con filas erróneas), simulador con y sin guardado, estado del rol y migración de la Fase 2 a la 3. Los pasos y resultados están en `docs/PRUEBAS_MANUALES.md` y las capturas y salidas de Gradle en `docs/evidencias/`.
+
+## Limitaciones
+
+- Android solo entrega al servicio las llamadas de números que no están en la agenda, y no se debe suponer que llegan todas.
+- Los números ocultos se permiten.
+- No se puede volver a una versión anterior de la app con la base de datos ya migrada (`SQLiteOpenHelper` no permite bajar de versión).
+- Una etiqueta vacía en el CSV conserva la existente, así que el CSV no puede borrar etiquetas.
+- Un patrón no puede estar a la vez en bloqueo y en lista blanca.
+- No se han implementado las ampliaciones opcionales: franjas horarias, bases de datos antispam, actualización de listas, puntuación de riesgo, detección de números ocultos ni exportación de estadísticas.
+
+## Cómo compilar e instalar
+
+Con el JDK 17: `.\gradlew.bat assembleDebug`. El APK queda en `app/build/outputs/apk/debug/app-debug.apk` (la copia de entrega es `entregas/fase3-app-debug.apk`). Al abrir la app, pulsar «Activar filtro» y conceder el rol.
