@@ -9,7 +9,7 @@ prefijos/números. Se avanza por fases; cada fase conserva la anterior.
 ## Estado y norma de fases
 - Fase 1: terminada (regla 400 fija, servicio, probador).
 - Fase 2: terminada (SQLite, CRUD, motor puro, validación, tests).
-- Fase 3: PENDIENTE. **No empezarla hasta que el usuario escriba "continúa con la Fase 3".**
+- Fase 3: terminada (pasos 1-10). Pendiente solo la verificación del alumno y la entrega.
 - No implementar ampliaciones opcionales de la Fase 3 sin pedirlo.
 
 ## Reglas innegociables
@@ -38,10 +38,11 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`.
   (singleton con `applicationContext`, caché de reglas activas refrescada en cada CRUD).
 - `motor/`: `MotorFiltrado`, `Decision`, `Accion`, `ValidacionReglas` (Kotlin puro).
 - `ui/`: pantallas Compose; `MainActivity` solo monta `PantallaInicio`.
-- `util/`: `Enmascarar` (futuro CSV en Fase 3).
+- `util/`: `Enmascarar`, `Fechas`. Fase 3 añade `modelo/`, `registro/`, `csv/` y `datos/`
+  (ver `docs/FASE3.md`).
 - Servicio y UI comparten repositorio; la UI accede a la BD en `Dispatchers.IO`.
 
-## Fase 3 (diseño previsto, NO implementar aún)
+## Fase 3 (diseño, ya implementado)
 - Migración v1→v2 con `ALTER TABLE` (tipo, accion, prioridad) y tabla `registro`.
 - Motor con prioridad, lista blanca, empate por especificidad y registro de actividad.
 - CSV con SAF y estadísticas. Mantener el motor preparado para nuevos tipos de regla.
@@ -51,12 +52,12 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`.
   reales (comando + salida) y limitaciones.
 
 ## Estado de la Fase 3
-- **Pasos hechos:** Pasos 1-9 (migración v1→v2, `modelo/`, motor v3, validación/CRUD, navegación con pestañas, registro/ajustes, estadísticas, CSV con SAF, Simulador y pulido). Pasos 1-8 commiteados; el paso 9 compila y pasa los tests JVM, pero está **sin commitear** (lo hace el usuario).
-- **Paso 9 (resumen):** el Probador pasa a ser el Simulador (mismo `MotorFiltrado.evaluar` con la caché de reglas activas; muestra decisión, patrón, tipo, prioridad y motivo). Interruptor "guardar en el registro" (apagado por defecto) que inserta con origen `SIMULADA` vía `RepositorioRegistro.insertar`. Interruptor "incluir simulaciones" compartido por Registro y Estadísticas; las simuladas se marcan en la lista. Estados vacíos, errores claros en el diálogo de reglas y resumen de importación (`csv/TextoImportacion`).
-- **Pendiente:** paso 10. **No empezar el paso 10 hasta que se indique.**
+- **Fase 3 COMPLETA.** Pasos 1-10 hechos (migración v1→v2, `modelo/`, motor v3, validación/CRUD, navegación con pestañas, registro/ajustes, estadísticas, CSV con SAF, Simulador y pulido, cierre).
+- **Paso 10 (cierre):** build limpio `clean testDebugUnitTest assembleDebug assembleDebugAndroidTest` correcto (15 suites JVM, 105 tests, 0 fallos); evidencias en `docs/evidencias/`; `docs/FASE3.md` reescrito y comprobado contra el código; checklist manual en `docs/PRUEBAS_MANUALES.md`.
+- **Solo queda (lo hace el alumno):** ejecutar `connectedDebugAndroidTest` y la checklist manual en el emulador, rellenar "resultado real" y "captura", commitear y entregar. No hay más pasos de implementación ni ampliaciones opcionales.
 - **Condiciones vigentes:**
   - Windows PowerShell (no usar `tail`, `head` ni `grep`; usar `Select-Object -Last ...` o `Select-String`).
-  - **No usar emulador ni `connectedDebugAndroidTest` hasta el paso 10.**
+  - **El emulador y `connectedDebugAndroidTest` los ejecuta el alumno, no el agente.**
   - **No ejecutar git.**
   - Sin dependencias nuevas, sin subir AGP/Kotlin/Compose/Gradle. `minSdk = 29`.
   - SQLite nativo con `SQLiteOpenHelper`; ajustes en `SharedPreferences`. Sin Room/KSP/kapt.
