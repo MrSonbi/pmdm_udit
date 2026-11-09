@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -614,29 +614,34 @@ private fun TarjetaRegla(
     alEditar: () -> Unit,
     alEliminar: () -> Unit
 ) {
+    // Tres filas para que el texto largo nunca compita por el ancho con los botones:
+    //  1) patrón + etiqueta + estado (con weight) y el Switch a la derecha;
+    //  2) descripción (tipo • acción • prioridad) a todo el ancho, máx. 2 líneas;
+    //  3) botones Editar / Eliminar en su propia fila, alineados a la derecha.
+    // Sin alturas fijas: la tarjeta mide lo que mide su contenido.
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)
         ) {
+            // Fila 1
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = regla.patron,
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     regla.etiqueta?.takeIf { it.isNotBlank() }?.let { etiqueta ->
                         Text(
                             text = etiqueta,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                }
-                Switch(checked = regla.activa, onCheckedChange = alCambiarActiva)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column {
                     Text(
                         text = if (regla.activa) "Activa" else "Inactiva",
                         style = MaterialTheme.typography.labelMedium,
@@ -646,18 +651,39 @@ private fun TarjetaRegla(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
-                    Text(
-                        text = "${textoTipo(regla.tipo)} • ${textoAccion(regla.accion)} • prioridad ${regla.prioridad}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = alEditar) {
-                    Text("Editar")
+                // El Switch de Material 3 ya reserva su zona táctil mínima de 48 dp.
+                Switch(checked = regla.activa, onCheckedChange = alCambiarActiva)
+            }
+            // Fila 2: a todo el ancho, nunca empuja a los botones.
+            Text(
+                text = "${textoTipo(regla.tipo)} • ${textoAccion(regla.accion)} • prioridad ${regla.prioridad}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp, end = 8.dp)
+            )
+            // Fila 3: solo botones. Un TextButton mide como mínimo 48 dp de alto
+            // (zona táctil) y su texto va en una línea, sin partirse.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = alEditar,
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Text("Editar", maxLines = 1, softWrap = false)
                 }
-                TextButton(onClick = alEliminar) {
-                    Text("Eliminar")
+                TextButton(
+                    onClick = alEliminar,
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Text("Eliminar", maxLines = 1, softWrap = false)
                 }
             }
         }

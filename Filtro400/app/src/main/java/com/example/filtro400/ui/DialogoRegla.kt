@@ -3,7 +3,8 @@ package com.example.filtro400.ui
 import android.database.sqlite.SQLiteConstraintException
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -34,6 +35,7 @@ import kotlinx.coroutines.launch
  * (2 dígitos o menos) y es [TipoRegla.PREFIJO], se muestra una segunda
  * confirmación antes de guardar.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DialogoRegla(
     regla: Regla?,
@@ -134,7 +136,9 @@ fun DialogoRegla(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Tipo", style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // FlowRow: si los chips no caben en una línea ("Permitir (lista blanca)"
+                // en un diálogo estrecho), pasan a la siguiente en vez de desbordarse.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = tipoSeleccionado == TipoRegla.PREFIJO,
                         onClick = { if (!guardando) tipoSeleccionado = TipoRegla.PREFIJO },
@@ -149,7 +153,9 @@ fun DialogoRegla(
                     )
                 }
                 Text("Acción", style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // FlowRow: si los chips no caben en una línea ("Permitir (lista blanca)"
+                // en un diálogo estrecho), pasan a la siguiente en vez de desbordarse.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = accionSeleccionada == Accion.BLOQUEAR,
                         onClick = {

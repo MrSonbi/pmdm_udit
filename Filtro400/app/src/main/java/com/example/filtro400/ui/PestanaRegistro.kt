@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -73,6 +75,7 @@ private val formatoFecha: DateTimeFormatter = DateTimeFormatter
  * (al volver a la app, tras borrar el registro...).
  * Las lecturas van en Dispatchers.IO dentro de [RepositorioRegistro].
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PestanaRegistro(
     repositorioRegistro: RepositorioRegistro,
@@ -133,7 +136,8 @@ fun PestanaRegistro(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // FlowRow: con letra grande los chips bajan de línea en vez de cortarse.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FiltroDecision.entries.forEach { opcion ->
                         FilterChip(
                             selected = filtro == opcion,

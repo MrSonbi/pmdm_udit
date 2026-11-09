@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,6 +59,7 @@ private val TIPOS_CSV = arrayOf(
  *
  * Toda la E/S (BD y ficheros) va en Dispatchers.IO.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PestanaAjustes(
     repositorioReglas: RepositorioReglas,
@@ -196,15 +199,16 @@ fun PestanaAjustes(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // FlowRow: si no caben los dos botones, el segundo baja de línea.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = { lanzadorExportar.launch("filtro400_reglas.csv") },
                             enabled = !trabajando
-                        ) { Text("Exportar") }
+                        ) { Text("Exportar", maxLines = 1, softWrap = false) }
                         OutlinedButton(
                             onClick = { lanzadorImportar.launch(TIPOS_CSV) },
                             enabled = !trabajando
-                        ) { Text("Importar") }
+                        ) { Text("Importar", maxLines = 1, softWrap = false) }
                     }
                     if (trabajando) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
