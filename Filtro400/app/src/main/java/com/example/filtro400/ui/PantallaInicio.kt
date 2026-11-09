@@ -4,25 +4,18 @@ import android.app.role.RoleManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -43,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -55,6 +47,8 @@ import com.example.filtro400.motor.Decision
 import com.example.filtro400.motor.MotorFiltrado
 import com.example.filtro400.registro.OrigenLlamada
 import com.example.filtro400.registro.RepositorioRegistro
+import com.example.filtro400.ui.tema.BarraNeu
+import com.example.filtro400.ui.tema.ColoresNeu
 import com.example.filtro400.util.Enmascarar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -168,25 +162,14 @@ fun PantallaInicio() {
     }
 
     Scaffold(
+        containerColor = ColoresNeu.fondo,
         bottomBar = {
-            // Pestañas solo texto (sin dependencia de iconos extra).
-            NavigationBar {
-                PESTANAS.forEachIndexed { indice, titulo ->
-                    NavigationBarItem(
-                        selected = pestana == indice,
-                        onClick = { pestana = indice },
-                        icon = {},
-                        label = {
-                            Text(
-                                text = titulo,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    )
-                }
-            }
+            // Pestañas solo texto (sin dependencia de iconos extra); la activa, hundida.
+            BarraNeu(
+                pestanas = PESTANAS,
+                seleccionada = pestana,
+                alSeleccionar = { pestana = it }
+            )
         }
     ) { paddingValores ->
         when (pestana) {
@@ -289,82 +272,27 @@ fun PantallaInicio() {
                 }
             }
 
-            1 -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValores),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "Reglas",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Se evalúan por prioridad, tipo y acción. La lista blanca puede ganar al bloqueo.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Button(onClick = {
-                                reglaEnEdicion = null
-                                dialogoAbierto = true
-                            }) {
-                                Text("Añadir regla")
-                            }
+            1 -> PestanaReglas(
+                reglas = reglas,
+                cargando = cargando,
+                mensajeError = errorCarga ?: mensajeAccion,
+                alCambiarActiva = { regla, activa ->
+                    ejecutarAccion {
+                        withContext(Dispatchers.IO) {
+                            repositorio.cambiarActiva(regla.id, activa)
                         }
                     }
-                    if (errorCarga != null || mensajeAccion != null) {
-                        item {
-                            Card {
-                                Text(
-                                    text = errorCarga ?: mensajeAccion.orEmpty(),
-                                    modifier = Modifier.padding(16.dp),
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                    }
-                    if (cargando) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                            }
-                        }
-                    }
-                    if (!cargando && errorCarga == null && reglas.isEmpty()) {
-                        item {
-                            TarjetaAviso(
-                                "Todavía no hay reglas. Mientras no añadas ninguna, se permiten " +
-                                    "todas las llamadas. Pulsa «Añadir regla» o importa un CSV desde Ajustes."
-                            )
-                        }
-                    }
-                    items(reglas, key = { it.id }) { regla ->
-                        TarjetaRegla(
-                            regla = regla,
-                            alCambiarActiva = { activa ->
-                                ejecutarAccion {
-                                    withContext(Dispatchers.IO) {
-                                        repositorio.cambiarActiva(regla.id, activa)
-                                    }
-                                }
-                            },
-                            alEditar = {
-                                reglaEnEdicion = regla
-                                dialogoAbierto = true
-                            },
-                            alEliminar = { reglaAEliminar = regla }
-                        )
-                    }
-                }
-            }
+                },
+                alEditar = { regla ->
+                    reglaEnEdicion = regla
+                    dialogoAbierto = true
+                },
+                alAnadir = {
+                    reglaEnEdicion = null
+                    dialogoAbierto = true
+                },
+                contentPadding = paddingValores
+            )
 
             2 -> PestanaRegistro(
                 repositorioRegistro = repositorioRegistro,
@@ -419,6 +347,14 @@ fun PantallaInicio() {
                     }
                 }
                 recarga++
+            },
+            // Solo en edición: cierra el diálogo y pide la confirmación de abajo.
+            alEliminar = reglaActual?.let { r ->
+                {
+                    dialogoAbierto = false
+                    reglaEnEdicion = null
+                    reglaAEliminar = r
+                }
             }
         )
     }
@@ -429,8 +365,8 @@ fun PantallaInicio() {
             title = { Text("Eliminar regla") },
             text = {
                 Text(
-                    "¿Seguro que quieres eliminar la regla «${regla.patron}»? " +
-                        "Esta acción no se puede deshacer."
+                    "Se eliminará la regla «${regla.patron}» (${fraseRegla(regla).lowercase()}). " +
+                        "No se puede deshacer."
                 )
             },
             confirmButton = {
@@ -442,7 +378,8 @@ fun PantallaInicio() {
                         }
                     }
                 }) {
-                    Text("Eliminar")
+                    // El texto dice lo que hace; el color de bloqueo solo lo refuerza.
+                    Text("Eliminar", color = ColoresNeu.bloqueo)
                 }
             },
             dismissButton = {
@@ -470,8 +407,12 @@ fun PantallaInicio() {
     }
 }
 
-/** Títulos de la barra inferior, en orden. El índice es la pestaña. */
-private val PESTANAS = listOf("Inicio", "Reglas", "Registro", "Estadísticas", "Ajustes")
+/**
+ * Títulos de la barra inferior, en orden. El índice es la pestaña.
+ * "Datos" es la pestaña Estadísticas: "Estadísticas" no cabe en 1/5 del ancho con
+ * letra al 130 %. Solo cambia la etiqueta; el título de la pantalla sigue igual.
+ */
+private val PESTANAS = listOf("Inicio", "Reglas", "Registro", "Datos", "Ajustes")
 
 @Composable
 private fun TarjetaEstado(filtroActivo: Boolean, alActivar: () -> Unit) {
@@ -605,87 +546,4 @@ private fun DatoSimulacion(etiqueta: String, valor: String) {
         text = "$etiqueta: $valor",
         style = MaterialTheme.typography.bodyMedium
     )
-}
-
-@Composable
-private fun TarjetaRegla(
-    regla: Regla,
-    alCambiarActiva: (Boolean) -> Unit,
-    alEditar: () -> Unit,
-    alEliminar: () -> Unit
-) {
-    // Tres filas para que el texto largo nunca compita por el ancho con los botones:
-    //  1) patrón + etiqueta + estado (con weight) y el Switch a la derecha;
-    //  2) descripción (tipo • acción • prioridad) a todo el ancho, máx. 2 líneas;
-    //  3) botones Editar / Eliminar en su propia fila, alineados a la derecha.
-    // Sin alturas fijas: la tarjeta mide lo que mide su contenido.
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)
-        ) {
-            // Fila 1
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = regla.patron,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    regla.etiqueta?.takeIf { it.isNotBlank() }?.let { etiqueta ->
-                        Text(
-                            text = etiqueta,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Text(
-                        text = if (regla.activa) "Activa" else "Inactiva",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (regla.activa) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
-                // El Switch de Material 3 ya reserva su zona táctil mínima de 48 dp.
-                Switch(checked = regla.activa, onCheckedChange = alCambiarActiva)
-            }
-            // Fila 2: a todo el ancho, nunca empuja a los botones.
-            Text(
-                text = "${textoTipo(regla.tipo)} • ${textoAccion(regla.accion)} • prioridad ${regla.prioridad}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp, end = 8.dp)
-            )
-            // Fila 3: solo botones. Un TextButton mide como mínimo 48 dp de alto
-            // (zona táctil) y su texto va en una línea, sin partirse.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = alEditar,
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                ) {
-                    Text("Editar", maxLines = 1, softWrap = false)
-                }
-                TextButton(
-                    onClick = alEliminar,
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                ) {
-                    Text("Eliminar", maxLines = 1, softWrap = false)
-                }
-            }
-        }
-    }
 }
