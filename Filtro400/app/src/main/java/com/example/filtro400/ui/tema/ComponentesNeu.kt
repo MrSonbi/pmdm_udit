@@ -3,6 +3,22 @@ package com.example.filtro400.ui.tema
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -275,17 +291,54 @@ fun NeuBoton(
                 onClick = alPulsar
             )
             .defaultMinSize(minWidth = TACTIL_MIN, minHeight = TACTIL_MIN)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = texto,
+        // Una sola línea: si no cabe, la letra se reduce un poco (TextoUnaLinea)
+        // en vez de partir la palabra o ponerla en vertical.
+        TextoUnaLinea(
+            texto = texto,
             color = if (habilitado) color else color.copy(alpha = 0.6f),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center
+            estilo = MaterialTheme.typography.labelLarge,
+            peso = FontWeight.SemiBold
         )
     }
+}
+
+/** Tamaño mínimo al que [TextoUnaLinea] puede reducir la letra. */
+private val TAMANO_MINIMO_AJUSTE: TextUnit = 12.sp
+
+/**
+ * Texto de UNA sola línea para botones, pestañas y opciones del selector.
+ *
+ * Nunca se parte en vertical ni a mitad de palabra: maxLines = 1 y
+ * softWrap = false. Si con la letra elegida no cabe en su hueco, [BasicText]
+ * con autoSize la reduce poco a poco (hasta [TAMANO_MINIMO_AJUSTE]); solo si
+ * aun así no cabe aparecen los puntos suspensivos, como último recurso.
+ * Con textos que sí caben (lo normal) la letra no cambia.
+ */
+@Composable
+fun TextoUnaLinea(
+    texto: String,
+    modifier: Modifier = Modifier,
+    estilo: TextStyle = MaterialTheme.typography.labelLarge,
+    color: Color = ColoresNeu.texto,
+    peso: FontWeight? = null,
+    alineacion: TextAlign = TextAlign.Center
+) {
+    BasicText(
+        text = texto,
+        modifier = modifier,
+        style = estilo.merge(TextStyle(color = color, fontWeight = peso, textAlign = alineacion)),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = TAMANO_MINIMO_AJUSTE,
+            maxFontSize = estilo.fontSize,
+            stepSize = 0.5.sp
+        )
+    )
 }
 
 /**
@@ -330,15 +383,15 @@ fun SelectorSegmentado(
                         onClick = { alSeleccionar(indice) }
                     )
                     .defaultMinSize(minHeight = TACTIL_MIN)
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                    .padding(horizontal = 4.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = texto,
+                // Cada opción en UNA línea (se encoge un poco antes que partirse).
+                TextoUnaLinea(
+                    texto = texto,
                     color = if (activa) ColoresNeu.acento else ColoresNeu.texto,
-                    fontWeight = if (activa) FontWeight.Bold else FontWeight.Normal,
-                    style = MaterialTheme.typography.labelLarge,
-                    textAlign = TextAlign.Center
+                    peso = if (activa) FontWeight.Bold else FontWeight.Normal,
+                    estilo = MaterialTheme.typography.labelLarge
                 )
             }
         }
@@ -390,8 +443,222 @@ fun NeuInterruptor(
             style = MaterialTheme.typography.labelMedium,
             color = if (activo) ColoresNeu.acento else ColoresNeu.textoSecundario,
             fontWeight = if (activo) FontWeight.Bold else FontWeight.Normal,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            // El estado es una palabra corta: nunca se parte.
+            maxLines = 1,
+            softWrap = false
         )
+    }
+}
+
+/**
+ * Fila "texto + interruptor": a la izquierda una Column con weight(1f) (título
+ * y explicación, que pueden ocupar varias líneas); a la derecha, solo el
+ * [NeuInterruptor] con su estado escrito. El texto nunca empuja al interruptor.
+ */
+@Composable
+fun FilaInterruptor(
+    titulo: String,
+    activo: Boolean,
+    alCambiar: (Boolean) -> Unit,
+    textoActivo: String,
+    textoInactivo: String,
+    modifier: Modifier = Modifier,
+    explicacion: String? = null
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = titulo,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = ColoresNeu.texto
+            )
+            if (explicacion != null) {
+                Text(
+                    text = explicacion,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ColoresNeu.textoSecundario
+                )
+            }
+        }
+        NeuInterruptor(
+            activo = activo,
+            alCambiar = alCambiar,
+            textoActivo = textoActivo,
+            textoInactivo = textoInactivo,
+            descripcion = titulo
+        )
+    }
+}
+
+/**
+ * Fila que pliega/despliega una sección. El estado va ESCRITO ("Mostrar" /
+ * "Ocultar"), no solo con un icono. El título lleva weight(1f) y puede ocupar
+ * varias líneas; "Mostrar"/"Ocultar" es corto y va en una sola.
+ */
+@Composable
+fun FilaDesplegable(titulo: String, abierta: Boolean, alCambiar: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(role = Role.Button, onClick = alCambiar)
+            .semantics { stateDescription = if (abierta) "Desplegado" else "Plegado" }
+            .defaultMinSize(minHeight = TACTIL_MIN)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = titulo,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = ColoresNeu.texto,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = if (abierta) "Ocultar" else "Mostrar",
+            style = MaterialTheme.typography.labelLarge,
+            color = ColoresNeu.acento,
+            maxLines = 1,
+            softWrap = false
+        )
+    }
+}
+
+/**
+ * Elemento desplegable con su propio estado (plegado al empezar). Al
+ * desplegarlo, [contenido] aparece debajo de la fila del título.
+ */
+@Composable
+fun NeuDesplegable(
+    titulo: String,
+    modifier: Modifier = Modifier,
+    contenido: @Composable ColumnScope.() -> Unit
+) {
+    var abierto by rememberSaveable(titulo) { mutableStateOf(false) }
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        FilaDesplegable(titulo = titulo, abierta = abierto, alCambiar = { abierto = !abierto })
+        if (abierto) {
+            Column(
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                content = contenido
+            )
+        }
+    }
+}
+
+/**
+ * Diálogo neumórfico común (reglas, simulador, confirmaciones, importación).
+ *
+ *  - El título va arriba, fijo.
+ *  - [contenido] va en una Column con verticalScroll y weight(1f, fill = false):
+ *    ocupa solo lo que necesita y, si no cabe, se desplaza.
+ *  - [botones] van ABAJO, FUERA del área desplazable: siempre se ven.
+ *  - imePadding: con el teclado abierto el diálogo deja hueco y los botones
+ *    quedan por encima del teclado.
+ *
+ * Tocar fuera no cierra (no se pierde lo escrito sin querer); Atrás sí.
+ */
+@Composable
+fun NeuDialogo(
+    titulo: String,
+    alCerrar: () -> Unit,
+    botones: @Composable RowScope.() -> Unit,
+    contenido: @Composable ColumnScope.() -> Unit
+) {
+    Dialog(
+        onDismissRequest = alCerrar,
+        properties = DialogProperties(dismissOnClickOutside = false)
+    ) {
+        Surface(
+            modifier = Modifier.imePadding(),
+            shape = RoundedCornerShape(28.dp),
+            color = ColoresNeu.fondo,
+            contentColor = ColoresNeu.texto
+        ) {
+            Column(modifier = Modifier.padding(top = 24.dp, bottom = 20.dp)) {
+                Text(
+                    text = titulo,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = ColoresNeu.texto,
+                    modifier = Modifier.padding(horizontal = 22.dp)
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                        // Margen amplio: las sombras de las piezas no se cortan.
+                        .padding(horizontal = 22.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    content = contenido
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 22.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    content = botones
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Confirmación sencilla (eliminar regla, borrar registro, prefijo corto).
+ * Si [peligrosa] es true, el botón de confirmar lleva el texto en color de
+ * bloqueo; el texto del botón siempre dice lo que hace.
+ */
+@Composable
+fun NeuConfirmacion(
+    titulo: String,
+    texto: String,
+    textoConfirmar: String,
+    alConfirmar: () -> Unit,
+    alCancelar: () -> Unit,
+    peligrosa: Boolean = false
+) {
+    NeuDialogo(
+        titulo = titulo,
+        alCerrar = alCancelar,
+        botones = {
+            NeuBoton(
+                texto = "Cancelar",
+                alPulsar = alCancelar,
+                primario = false,
+                modifier = Modifier.weight(1f)
+            )
+            NeuBoton(
+                texto = textoConfirmar,
+                alPulsar = alConfirmar,
+                primario = !peligrosa,
+                colorTexto = if (peligrosa) ColoresNeu.bloqueo else null,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    ) {
+        Text(text = texto, style = MaterialTheme.typography.bodyLarge, color = ColoresNeu.texto)
+    }
+}
+
+/** Indicador de carga centrado, con el color de acento. */
+@Composable
+fun NeuCargando(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = ColoresNeu.acento)
     }
 }
 
@@ -490,8 +757,8 @@ private val ALTO_CELDA_PESTANA: Dp = 48.dp
  *
  * La pestaña seleccionada lleva el indicador HUNDIDO dentro de una celda de alto
  * fijo [ALTO_CELDA_PESTANA] (48 dp, la zona táctil mínima), con el texto en acento
- * y en negrita. Cada pestaña tiene weight(1f); el texto va en una sola línea a
- * 13 sp para que quepa incluso con letra al 130 %.
+ * y en negrita. Cada pestaña tiene weight(1f); el texto va en una sola línea
+ * ([TextoUnaLinea]): 14 sp, y algo menos solo si no cabe.
  *
  * El efecto neumórfico de la barra en sí es solo su fondo: una sombra suave
  * hacia arriba y un filo claro, como si la barra estuviera un poco elevada.
@@ -550,20 +817,13 @@ fun BarraNeu(
                     .padding(horizontal = 1.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = titulo,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontSize = 13.sp,
-                        lineHeight = 16.sp
-                    ),
+                // Una línea a 14 sp; solo si no cabe (pantalla estrecha y letra muy
+                // grande) se reduce un poco, en vez de partirse o salir con "…".
+                TextoUnaLinea(
+                    texto = titulo,
+                    estilo = MaterialTheme.typography.labelMedium,
                     color = if (activa) ColoresNeu.acento else ColoresNeu.textoSecundario,
-                    fontWeight = if (activa) FontWeight.Bold else FontWeight.Normal,
-                    maxLines = 1,
-                    softWrap = false,
-                    // Último recurso en pantallas muy estrechas; con los nombres
-                    // actuales no debería verse nunca.
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center
+                    peso = if (activa) FontWeight.Bold else FontWeight.Normal
                 )
             }
         }

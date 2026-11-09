@@ -1,38 +1,18 @@
 package com.example.filtro400.ui
 
 import android.database.sqlite.SQLiteConstraintException
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.example.filtro400.ReglaBloqueo
 import com.example.filtro400.modelo.Accion
 import com.example.filtro400.modelo.Regla
@@ -40,7 +20,10 @@ import com.example.filtro400.modelo.TipoRegla
 import com.example.filtro400.motor.ValidacionReglas
 import com.example.filtro400.ui.tema.CampoHundido
 import com.example.filtro400.ui.tema.ColoresNeu
+import com.example.filtro400.ui.tema.FilaDesplegable
 import com.example.filtro400.ui.tema.NeuBoton
+import com.example.filtro400.ui.tema.NeuConfirmacion
+import com.example.filtro400.ui.tema.NeuDialogo
 import com.example.filtro400.ui.tema.SelectorSegmentado
 import kotlinx.coroutines.launch
 
@@ -53,8 +36,8 @@ private val TIPOS = listOf(TipoRegla.PREFIJO, TipoRegla.NUMERO)
 /**
  * Diálogo de alta/edición de una regla, en UNA sola pantalla y con preguntas
  * en lenguaje llano:
- *  1) ¿Qué quieres hacer? -> Bloquear / Permitir siempre
- *  2) ¿A qué llamadas?    -> Que empiecen por… / Un número concreto
+ *  1) ¿Qué quieres hacer? -> Bloquear / Permitir
+ *  2) ¿A qué llamadas?    -> Empiezan por / Un número
  *  3) el prefijo o número (campo hundido, con el error de validación debajo)
  *  4) etiqueta opcional
  *  5) "Opciones avanzadas" (plegado): la prioridad.
@@ -164,135 +147,119 @@ fun DialogoRegla(
         }
     }
 
-    Dialog(
-        onDismissRequest = { if (!guardando) alCerrar() },
-        // Tocar fuera NO cierra: así no se pierde lo escrito por un toque sin querer.
-        // Atrás o "Cancelar" sí cierran.
-        properties = DialogProperties(dismissOnClickOutside = false)
+    // NeuDialogo: el contenido va en una Column con verticalScroll y los botones
+    // Cancelar / Guardar quedan FIJOS abajo, fuera del área desplazable y con
+    // imePadding: siempre se alcanzan, también con el teclado abierto.
+    // Tocar fuera NO cierra (no se pierde lo escrito); Atrás o "Cancelar" sí.
+    NeuDialogo(
+        titulo = if (regla == null) "Añadir regla" else "Editar regla",
+        alCerrar = { if (!guardando) alCerrar() },
+        botones = {
+            // Guardar es la acción principal; Cancelar, la secundaria. Cada botón
+            // tiene weight(1f): ninguno puede empujar al otro fuera de la fila.
+            NeuBoton(
+                texto = "Cancelar",
+                alPulsar = alCerrar,
+                primario = false,
+                habilitado = !guardando,
+                modifier = Modifier.weight(1f)
+            )
+            NeuBoton(
+                texto = if (guardando) "Guardando…" else "Guardar",
+                alPulsar = { intentarGuardar() },
+                habilitado = !guardando,
+                modifier = Modifier.weight(1f)
+            )
+        }
     ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = ColoresNeu.fondo,
-            contentColor = ColoresNeu.texto
-        ) {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    // Margen amplio: las sombras de las piezas no se cortan.
-                    .padding(horizontal = 22.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                Text(
-                    text = if (regla == null) "Añadir regla" else "Editar regla",
-                    style = MaterialTheme.typography.titleLarge
-                )
+        Pregunta("¿Qué quieres hacer?")
+        SelectorSegmentado(
+            opciones = listOf("Bloquear", "Permitir"),
+            seleccionada = ACCIONES.indexOf(accionSeleccionada),
+            alSeleccionar = {
+                accionSeleccionada = ACCIONES[it]
+                actualizarPrioridadPorDefecto()
+            },
+            habilitado = !guardando
+        )
 
-                Pregunta("¿Qué quieres hacer?")
-                SelectorSegmentado(
-                    opciones = listOf("Bloquear", "Permitir siempre"),
-                    seleccionada = ACCIONES.indexOf(accionSeleccionada),
-                    alSeleccionar = {
-                        accionSeleccionada = ACCIONES[it]
-                        actualizarPrioridadPorDefecto()
-                    },
-                    habilitado = !guardando
-                )
+        Pregunta("¿A qué llamadas?")
+        SelectorSegmentado(
+            opciones = listOf("Empiezan por", "Un número"),
+            seleccionada = TIPOS.indexOf(tipoSeleccionado),
+            alSeleccionar = { tipoSeleccionado = TIPOS[it] },
+            habilitado = !guardando
+        )
 
-                Pregunta("¿A qué llamadas?")
-                SelectorSegmentado(
-                    opciones = listOf("Que empiecen por…", "Un número concreto"),
-                    seleccionada = TIPOS.indexOf(tipoSeleccionado),
-                    alSeleccionar = { tipoSeleccionado = TIPOS[it] },
-                    habilitado = !guardando
-                )
+        CampoHundido(
+            valor = textoPatron,
+            alCambiar = {
+                textoPatron = it
+                error = null
+            },
+            etiqueta = if (tipoSeleccionado == TipoRegla.NUMERO) "Número" else "Prefijo",
+            ejemplo = if (tipoSeleccionado == TipoRegla.NUMERO) "Ej. 612 345 678" else "Ej. 400",
+            error = error,
+            teclado = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            habilitado = !guardando
+        )
 
-                CampoHundido(
-                    valor = textoPatron,
-                    alCambiar = {
-                        textoPatron = it
-                        error = null
-                    },
-                    etiqueta = if (tipoSeleccionado == TipoRegla.NUMERO) "Número" else "Prefijo",
-                    ejemplo = if (tipoSeleccionado == TipoRegla.NUMERO) "Ej. 612 345 678" else "Ej. 400",
-                    error = error,
-                    teclado = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    habilitado = !guardando
-                )
+        // Vista previa en lenguaje llano de lo que hará la regla.
+        val vistaPrevia = ReglaBloqueo.normalizar(textoPatron)
+        if (vistaPrevia.isNotEmpty() && error == null) {
+            Text(
+                text = fraseRegla(tipoSeleccionado, accionSeleccionada, vistaPrevia) + ".",
+                style = MaterialTheme.typography.bodyLarge,
+                color = ColoresNeu.textoSecundario
+            )
+        }
 
-                // Vista previa en lenguaje llano de lo que hará la regla.
-                val vistaPrevia = ReglaBloqueo.normalizar(textoPatron)
-                if (vistaPrevia.isNotEmpty() && error == null) {
-                    Text(
-                        text = fraseRegla(tipoSeleccionado, accionSeleccionada, vistaPrevia) + ".",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = ColoresNeu.textoSecundario
-                    )
-                }
+        CampoHundido(
+            valor = textoEtiqueta,
+            alCambiar = { textoEtiqueta = it },
+            etiqueta = "Nombre (opcional)",
+            ejemplo = "Ej. Publicidad",
+            habilitado = !guardando
+        )
 
-                CampoHundido(
-                    valor = textoEtiqueta,
-                    alCambiar = { textoEtiqueta = it },
-                    etiqueta = "Nombre (opcional)",
-                    ejemplo = "Ej. Publicidad",
-                    habilitado = !guardando
-                )
+        FilaDesplegable(
+            titulo = "Opciones avanzadas",
+            abierta = verAvanzadas,
+            alCambiar = { verAvanzadas = !verAvanzadas }
+        )
+        if (verAvanzadas) {
+            CampoHundido(
+                valor = prioridadTexto,
+                alCambiar = {
+                    prioridadTexto = it
+                    errorPrioridad = null
+                },
+                etiqueta = "Prioridad (de 0 a 100)",
+                error = errorPrioridad,
+                teclado = KeyboardOptions(keyboardType = KeyboardType.Number),
+                habilitado = !guardando
+            )
+            Text(
+                text = "Si varias reglas coinciden, gana la de prioridad más alta. " +
+                    "Por defecto: 0 al bloquear y 100 al permitir siempre. " +
+                    "Si la dejas vacía, se usa la de por defecto. " +
+                    "El número se guarda sin espacios, guiones ni +34.",
+                style = MaterialTheme.typography.bodySmall,
+                color = ColoresNeu.textoSecundario
+            )
+        }
 
-                FilaPlegable(
-                    titulo = "Opciones avanzadas",
-                    abierta = verAvanzadas,
-                    alCambiar = { verAvanzadas = !verAvanzadas }
-                )
-                if (verAvanzadas) {
-                    CampoHundido(
-                        valor = prioridadTexto,
-                        alCambiar = {
-                            prioridadTexto = it
-                            errorPrioridad = null
-                        },
-                        etiqueta = "Prioridad (de 0 a 100)",
-                        error = errorPrioridad,
-                        teclado = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        habilitado = !guardando
-                    )
-                    Text(
-                        text = "Si varias reglas coinciden, gana la de prioridad más alta. " +
-                            "Por defecto: 0 al bloquear y 100 al permitir siempre. " +
-                            "Si la dejas vacía, se usa la de por defecto. " +
-                            "El número se guarda sin espacios, guiones ni +34.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = ColoresNeu.textoSecundario
-                    )
-                }
-
-                // Guardar es la acción principal; Cancelar, la secundaria. Cada botón
-                // tiene weight(1f): ninguno puede empujar al otro fuera de la fila.
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    NeuBoton(
-                        texto = "Cancelar",
-                        alPulsar = alCerrar,
-                        primario = false,
-                        habilitado = !guardando,
-                        modifier = Modifier.weight(1f)
-                    )
-                    NeuBoton(
-                        texto = if (guardando) "Guardando…" else "Guardar",
-                        alPulsar = { intentarGuardar() },
-                        habilitado = !guardando,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                if (regla != null && alEliminar != null) {
-                    NeuBoton(
-                        texto = "Eliminar regla",
-                        alPulsar = alEliminar,
-                        primario = false,
-                        colorTexto = ColoresNeu.bloqueo,
-                        habilitado = !guardando,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
+        // "Eliminar regla" (solo en edición) va dentro del área desplazable,
+        // al final: no es una acción de este formulario, sino otra distinta.
+        if (regla != null && alEliminar != null) {
+            NeuBoton(
+                texto = "Eliminar regla",
+                alPulsar = alEliminar,
+                primario = false,
+                colorTexto = ColoresNeu.bloqueo,
+                habilitado = !guardando,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 
@@ -300,28 +267,15 @@ fun DialogoRegla(
         val patron = patronPendiente.orEmpty()
         val prioridadConfirmacion = prioridadTexto.trim().toIntOrNull()
             ?: ValidacionReglas.prioridadPorDefecto(accionSeleccionada)
-        AlertDialog(
-            onDismissRequest = { mostrarConfirmacion = false },
-            title = { Text("Prefijo muy corto") },
-            text = {
-                Text(
-                    "«$patron» tiene 2 dígitos o menos: afectaría a muchísimas llamadas. " +
-                        "¿Quieres guardarlo igualmente?"
-                )
+        NeuConfirmacion(
+            titulo = "¿Guardar un prefijo tan corto?",
+            texto = "«$patron» tiene 2 dígitos o menos: afectaría a muchísimas llamadas.",
+            textoConfirmar = "Guardar",
+            alConfirmar = {
+                mostrarConfirmacion = false
+                guardar(patron, prioridadConfirmacion)
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    mostrarConfirmacion = false
-                    guardar(patron, prioridadConfirmacion)
-                }) {
-                    Text("Guardar igualmente")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { mostrarConfirmacion = false }) {
-                    Text("Cancelar")
-                }
-            }
+            alCancelar = { mostrarConfirmacion = false }
         )
     }
 }
@@ -330,36 +284,6 @@ fun DialogoRegla(
 @Composable
 private fun Pregunta(texto: String) {
     Text(text = texto, style = MaterialTheme.typography.titleMedium)
-}
-
-/**
- * Fila que pliega/despliega una sección. El estado va ESCRITO ("Mostrar" /
- * "Ocultar"), no solo con un icono. El título lleva weight(1f).
- */
-@Composable
-private fun FilaPlegable(titulo: String, abierta: Boolean, alCambiar: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(role = Role.Button, onClick = alCambiar)
-            .semantics { stateDescription = if (abierta) "Desplegado" else "Plegado" }
-            .defaultMinSize(minHeight = 48.dp)
-            .padding(horizontal = 4.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = titulo,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = if (abierta) "Ocultar" else "Mostrar",
-            style = MaterialTheme.typography.labelLarge,
-            color = ColoresNeu.acento
-        )
-    }
 }
 
 /**

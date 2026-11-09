@@ -66,7 +66,8 @@ private val esquemaClaro = lightColorScheme(
     surfaceContainerLow = ColoresNeu.fondo,
     surfaceContainer = ColoresNeu.fondo,
     surfaceContainerHigh = ColoresNeu.fondo,
-    // Tarjetas Material (Card) de las pestañas aún no rediseñadas.
+    // Tarjetas Material (Card): ya no se usan en ui/ (todo es NeuTarjeta), se
+    // deja por si algún componente Material lo necesita.
     surfaceContainerHighest = ColoresNeu.superficie,
     // Bordes y pista del Switch apagado: el gris secundario (contraste >= 3:1).
     outline = ColoresNeu.textoSecundario,
@@ -87,8 +88,9 @@ private fun estilo(tamano: TextUnit, peso: FontWeight = FontWeight.Normal): Text
  *  - subtítulo 18 sp (titleMedium),
  *  - cuerpo 16 sp (body*Large/Medium, titleSmall, labelLarge),
  *  - etiquetas 14 sp como mínimo (bodySmall, labelMedium, labelSmall).
- * Ningún estilo baja de 14 sp. Única excepción, fuera de la tipografía: las
- * etiquetas de la barra inferior (BarraNeu) van a 13 sp para caber en 1/5 del ancho.
+ * Ningún estilo baja de 14 sp. Única excepción, fuera de la tipografía: los
+ * textos de una sola línea (TextoUnaLinea: botones, pestañas, selector) pueden
+ * reducirse hasta 12 sp SOLO si no caben, en vez de partirse o salir con "…".
  */
 private val tipografiaNeu = Typography(
     displayLarge = estilo(40.sp, FontWeight.Bold),

@@ -35,7 +35,7 @@ import com.example.filtro400.ui.tema.SelectorSegmentado
  *
  * Una sola acción principal: el botón "Añadir regla", fijo abajo y a todo el
  * ancho. Arriba, el título, una frase corta y el selector Todas / Bloqueos /
- * Lista blanca. Cada regla es una tarjeta: pulsarla abre la edición (y desde
+ * Permitidas. Cada regla es una tarjeta: pulsarla abre la edición (y desde
  * la edición se puede eliminar), así no hay botones sueltos en la tarjeta.
  *
  * Esta pestaña no toca la BD: recibe la lista y avisa con callbacks a
@@ -76,7 +76,7 @@ fun PestanaReglas(
                         color = ColoresNeu.texto
                     )
                     Text(
-                        text = "Decide qué llamadas se bloquean y cuáles entran siempre.",
+                        text = "Decide qué llamadas se bloquean y cuáles entran siempre (lista blanca).",
                         style = MaterialTheme.typography.bodyLarge,
                         color = ColoresNeu.textoSecundario
                     )

@@ -1,18 +1,17 @@
 package com.example.filtro400.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,32 +20,41 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.filtro400.registro.RepositorioRegistro
+import com.example.filtro400.ui.tema.ColoresNeu
+import com.example.filtro400.ui.tema.NeuCargando
+import com.example.filtro400.ui.tema.NeuTarjeta
+import com.example.filtro400.ui.tema.neuHundido
 
-/** Tamaño del ranking de reglas. */
-private const val TOP_REGLAS = 10
+/** Cuántas reglas se piden al repositorio antes de quedarnos con las de bloqueo. */
+private const val CONSULTA_RANKING = 50
+
+/** Cuántas reglas enseña el ranking "Reglas que más bloquean". */
+private const val TOP_REGLAS = 5
 
 /**
- * Pestaña Estadísticas. Usa los métodos ya probados de [RepositorioRegistro]:
- *  - [RepositorioRegistro.estadisticas]: bloqueadas y permitidas (hoy, 7 días
- *    y total) en una sola consulta; "hoy" empieza a las 00:00 de la zona local;
- *  - [RepositorioRegistro.rankingReglas]: reglas que más han decidido.
+ * Vista Estadísticas (dentro de Actividad). Usa los métodos ya probados de
+ * [RepositorioRegistro] (en Dispatchers.IO):
+ *  - [RepositorioRegistro.estadisticas]: bloqueadas y permitidas de hoy y de
+ *    los últimos 7 días; "hoy" empieza a las 00:00 de la zona local;
+ *  - [RepositorioRegistro.rankingReglas]: reglas que más han decidido. Aquí
+ *    solo se enseñan las que hoy son de BLOQUEO ([reglasQueBloquean]), porque
+ *    la tarjeta es "Reglas que más bloquean".
  *
- * El interruptor "incluir simulaciones" (compartido con Registro) solo cambia
- * el parámetro `incluirSimulaciones`: por defecto las filas SIMULADAS que
- * guarda el Simulador no cuentan.
- * Las consultas van en Dispatchers.IO dentro del repositorio.
+ * El interruptor "Mostrar pruebas" (en Actividad) llega como
+ * [incluirSimulaciones]. [cabecera] va al principio de la lista desplazable.
  */
 @Composable
 fun PestanaEstadisticas(
     repositorioRegistro: RepositorioRegistro,
     refresco: Int,
     incluirSimulaciones: Boolean,
-    alCambiarIncluirSimulaciones: (Boolean) -> Unit,
+    reglasQueBloquean: Set<String>,
+    cabecera: LazyListScope.() -> Unit,
     contentPadding: PaddingValues
 ) {
     var estadisticas by remember { mutableStateOf<RepositorioRegistro.Estadisticas?>(null) }
@@ -61,7 +69,7 @@ fun PestanaEstadisticas(
             val totales = repositorioRegistro.estadisticas(incluirSimulaciones = incluirSimulaciones)
             val top = repositorioRegistro.rankingReglas(
                 incluirSimulaciones = incluirSimulaciones,
-                limite = TOP_REGLAS
+                limite = CONSULTA_RANKING
             )
             totales to top
         }
@@ -71,7 +79,7 @@ fun PestanaEstadisticas(
             ranking = top
             error = null
         }.onFailure {
-            error = "No se pudieron calcular las estadísticas: ${it.message ?: "error desconocido"}"
+            error = "No se pudieron calcular las estadísticas. Vuelve a intentarlo más tarde."
         }
     }
 
@@ -79,85 +87,55 @@ fun PestanaEstadisticas(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = MARGEN_LISTA,
+        verticalArrangement = Arrangement.spacedBy(SEPARACION_LISTA)
     ) {
-        item {
-            Text(
-                text = "Estadísticas",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        item { TarjetaIncluirSimulaciones(incluirSimulaciones, alCambiarIncluirSimulaciones) }
+        cabecera()
+        item { TituloVista(titulo = "Estadísticas") }
 
         val datos = estadisticas
         when {
-            cargando && datos == null -> item {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                }
-            }
+            cargando && datos == null -> item { NeuCargando() }
 
             error != null -> item { TarjetaAviso(error.orEmpty(), esError = true) }
 
             datos == null || datos.total == 0 -> item {
                 TarjetaAviso(
-                    if (incluirSimulaciones) {
-                        "Todavía no hay llamadas registradas (ni reales ni simuladas), así que no " +
-                            "hay estadísticas."
-                    } else {
-                        "Todavía no hay llamadas reales registradas, así que no hay estadísticas. " +
-                            "Se rellenan con las llamadas que filtra el servicio."
-                    }
+                    "Todavía no hay datos. Cuando la app filtre alguna llamada, " +
+                        "aquí verás un resumen sencillo."
                 )
             }
 
             else -> {
-                // Bloqueadas y permitidas SIEMPRE por separado, con etiqueta explícita.
+                // Bloqueadas y permitidas SIEMPRE por separado y con texto.
                 item {
-                    TarjetaCifras(titulo = "Hoy (desde las 00:00)") {
-                        Cifra("Bloqueadas hoy", datos.bloqueadasHoy, destacada = true)
-                        Cifra("Permitidas hoy", datos.permitidasHoy)
+                    NeuTarjeta {
+                        TituloTarjeta("Hoy")
+                        Cifra("Bloqueadas hoy", datos.bloqueadasHoy, bloqueo = true)
+                        Cifra("Permitidas hoy", datos.permitidasHoy, bloqueo = false)
                     }
                 }
                 item {
-                    TarjetaCifras(titulo = "Últimos 7 días (hoy y los 6 anteriores)") {
-                        Cifra("Bloqueadas en los últimos 7 días", datos.bloqueadas7Dias, destacada = true)
-                        Cifra("Permitidas en los últimos 7 días", datos.permitidas7Dias)
+                    NeuTarjeta {
+                        TituloTarjeta("Últimos 7 días")
+                        Cifra("Bloqueadas", datos.bloqueadas7Dias, bloqueo = true)
+                        Cifra("Permitidas", datos.permitidas7Dias, bloqueo = false)
                     }
                 }
                 item {
-                    TarjetaCifras(titulo = "Todo el registro") {
-                        Cifra("Bloqueadas en total", datos.bloqueadas, destacada = true)
-                        Cifra("Permitidas en total", datos.permitidas)
-                    }
-                }
-                item {
-                    Text(
-                        text = "Reglas que más han decidido",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                if (ranking.isEmpty()) {
-                    item { TarjetaAviso("Ninguna llamada registrada ha coincidido con una regla.") }
-                } else {
-                    itemsIndexed(ranking, key = { _, uso -> uso.patron }) { indice, uso ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "${indice + 1}. ${uso.patron}",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = if (uso.veces == 1) "1 vez" else "${uso.veces} veces",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                    val top = ranking.filter { it.patron in reglasQueBloquean }.take(TOP_REGLAS)
+                    NeuTarjeta {
+                        TituloTarjeta("Reglas que más bloquean")
+                        if (top.isEmpty()) {
+                            Text(
+                                text = "Ninguna regla ha bloqueado llamadas todavía.",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = ColoresNeu.texto
+                            )
+                        } else {
+                            val maximo = top.maxOf { it.veces }.coerceAtLeast(1)
+                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                top.forEach { uso -> BarraRanking(uso, maximo) }
                             }
                         }
                     }
@@ -167,29 +145,63 @@ fun PestanaEstadisticas(
     }
 }
 
-/** Tarjeta con un título y varias cifras debajo. */
 @Composable
-private fun TarjetaCifras(titulo: String, contenido: @Composable () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(text = titulo, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            contenido()
-        }
+private fun TituloTarjeta(texto: String) {
+    Text(text = texto, style = MaterialTheme.typography.titleMedium, color = ColoresNeu.texto)
+}
+
+/**
+ * Una cifra: la etiqueta encima ("Bloqueadas hoy") y el valor debajo, grande y
+ * con el plural correcto ("1 llamada", "3 llamadas"). En columna, sin filas.
+ */
+@Composable
+private fun Cifra(etiqueta: String, valor: Int, bloqueo: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        Text(text = etiqueta, style = MaterialTheme.typography.bodyMedium, color = ColoresNeu.textoSecundario)
+        Text(
+            text = textoLlamadas(valor),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (bloqueo) ColoresNeu.bloqueo else ColoresNeu.permitir
+        )
     }
 }
 
+/**
+ * Una barra horizontal sencilla hecha con Box: el carril hundido a todo el
+ * ancho y, dentro, la barra rellena en proporción al máximo. La barra es
+ * decorativa; el dato va en texto ("Regla 400" y "12 llamadas").
+ * Sin altura fija: solo un alto MÍNIMO para que se vea.
+ */
 @Composable
-private fun Cifra(texto: String, valor: Int, destacada: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(text = texto, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+private fun BarraRanking(uso: RepositorioRegistro.UsoRegla, maximo: Int) {
+    val fraccion = (uso.veces.toFloat() / maximo).coerceIn(0.04f, 1f)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            text = valor.toString(),
-            style = if (destacada) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = if (destacada) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            text = textoReglaAplicada(uso.patron),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = ColoresNeu.texto
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .neuHundido(radio = 8.dp, profundidad = 2.dp)
+                .padding(3.dp)
+                // Lectores de pantalla: el dato ya está en texto, la barra se omite.
+                .clearAndSetSemantics { }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraccion)
+                    .defaultMinSize(minHeight = 10.dp)
+                    .background(ColoresNeu.bloqueo, RoundedCornerShape(6.dp))
+            )
+        }
+        Text(
+            text = textoLlamadas(uso.veces),
+            style = MaterialTheme.typography.bodyMedium,
+            color = ColoresNeu.textoSecundario
         )
     }
 }
