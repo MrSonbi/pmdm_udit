@@ -13,9 +13,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.filtro400.modelo.Accion
+import com.example.filtro400.registro.OrigenLlamada
 import com.example.filtro400.registro.RegistroLlamada
 import com.example.filtro400.registro.RepositorioRegistro
 import java.time.Instant
@@ -59,8 +62,12 @@ private val formatoFecha: DateTimeFormatter = DateTimeFormatter
     .withZone(ZoneId.systemDefault())
 
 /**
- * Pestaña Registro: últimas llamadas REALES (las simulaciones no se muestran),
- * con filtro por decisión y botón para borrar todo (con confirmación).
+ * Pestaña Registro: últimas llamadas, la más reciente primero, con filtro por
+ * decisión y botón para borrar todo (con confirmación).
+ *
+ * Las filas SIMULADAS (guardadas desde el Simulador) solo aparecen con el
+ * interruptor [incluirSimulaciones], y se marcan con otro color y la etiqueta
+ * "SIMULADA" para no confundirlas con llamadas reales.
  *
  * [refresco] es un contador: cada vez que cambia se vuelve a leer la BD
  * (al volver a la app, tras borrar el registro...).
@@ -71,6 +78,8 @@ fun PestanaRegistro(
     repositorioRegistro: RepositorioRegistro,
     refresco: Int,
     guardarRegistro: Boolean,
+    incluirSimulaciones: Boolean,
+    alCambiarIncluirSimulaciones: (Boolean) -> Unit,
     alBorrarRegistro: () -> Unit,
     contentPadding: PaddingValues
 ) {
@@ -79,10 +88,14 @@ fun PestanaRegistro(
     var error by remember { mutableStateOf<String?>(null) }
     var filtro by rememberSaveable { mutableStateOf(FiltroDecision.TODAS) }
 
-    LaunchedEffect(refresco) {
+    // Se vuelve a leer al llegar un refresco y al cambiar el interruptor.
+    LaunchedEffect(refresco, incluirSimulaciones) {
         cargando = true
         val resultado = runCatching {
-            repositorioRegistro.listarRecientes(incluirSimulaciones = false, limite = LIMITE_RECIENTES)
+            repositorioRegistro.listarRecientes(
+                incluirSimulaciones = incluirSimulaciones,
+                limite = LIMITE_RECIENTES
+            )
         }
         cargando = false
         resultado.onSuccess {
@@ -110,8 +123,13 @@ fun PestanaRegistro(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Últimas $LIMITE_RECIENTES llamadas reales, la más reciente primero. " +
-                        "Solo se guarda el número enmascarado.",
+                    text = if (incluirSimulaciones) {
+                        "Últimas $LIMITE_RECIENTES llamadas (reales y simuladas), la más reciente primero. " +
+                            "Solo se guarda el número enmascarado."
+                    } else {
+                        "Últimas $LIMITE_RECIENTES llamadas reales, la más reciente primero. " +
+                            "Solo se guarda el número enmascarado."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -129,6 +147,7 @@ fun PestanaRegistro(
                 }
             }
         }
+        item { TarjetaIncluirSimulaciones(incluirSimulaciones, alCambiarIncluirSimulaciones) }
 
         when {
             cargando -> item {
@@ -141,11 +160,15 @@ fun PestanaRegistro(
 
             filas.isEmpty() -> item {
                 TarjetaAviso(
-                    if (guardarRegistro) {
-                        "Todavía no hay llamadas registradas. Aparecerán aquí cuando el filtro " +
-                            "reciba llamadas de números que no están en la agenda."
-                    } else {
-                        "No hay llamadas registradas y el registro está desactivado en Ajustes."
+                    when {
+                        !guardarRegistro ->
+                            "No hay llamadas registradas y el registro está desactivado en Ajustes."
+                        incluirSimulaciones ->
+                            "Todavía no hay llamadas registradas, ni reales ni simuladas."
+                        else ->
+                            "Todavía no hay llamadas reales registradas. Aparecerán aquí cuando el " +
+                                "filtro reciba llamadas de números que no están en la agenda. " +
+                                "Las simulaciones guardadas se ven con «Incluir simulaciones»."
                     }
                 )
             }
@@ -162,7 +185,14 @@ fun PestanaRegistro(
 @Composable
 private fun TarjetaFilaRegistro(fila: RegistroLlamada) {
     val bloqueada = fila.decision == Accion.BLOQUEAR
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val simulada = fila.origen == OrigenLlamada.SIMULADA
+    // Las simuladas llevan otro color de fondo y la etiqueta "SIMULADA".
+    val colores = if (simulada) {
+        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+    } else {
+        CardDefaults.cardColors()
+    }
+    Card(modifier = Modifier.fillMaxWidth(), colors = colores) {
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -180,6 +210,14 @@ private fun TarjetaFilaRegistro(fila: RegistroLlamada) {
                     color = if (bloqueada) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 )
             }
+            if (simulada) {
+                Text(
+                    text = "SIMULADA (no es una llamada real)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
             Text(
                 text = formatoFecha.format(Instant.ofEpochMilli(fila.fecha)),
                 style = MaterialTheme.typography.bodySmall,
@@ -194,6 +232,30 @@ private fun TarjetaFilaRegistro(fila: RegistroLlamada) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+    }
+}
+
+/**
+ * Tarjeta con el interruptor "Incluir simulaciones". El estado vive en
+ * [PantallaInicio] y lo comparten Registro y Estadísticas.
+ */
+@Composable
+internal fun TarjetaIncluirSimulaciones(incluir: Boolean, alCambiar: (Boolean) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Incluir simulaciones")
+                Text(
+                    text = "Por defecto solo cuentan las llamadas reales.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = incluir, onCheckedChange = alCambiar)
         }
     }
 }

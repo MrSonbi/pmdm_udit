@@ -51,9 +51,9 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`.
   reales (comando + salida) y limitaciones.
 
 ## Estado de la Fase 3
-- **Pasos hechos y commiteados:** Pasos 1-6 (migración v1→v2, `modelo/`, motor v3, validación/CRUD, navegación con pestañas, registro/ajustes).
-- **En curso / escritos sin verificar:** Pasos 7-8 (estadísticas, pestañas Estadísticas y Ajustes, CSV con SAF) en el último commit "WIP fase3 (7-8)". El último comando falló; **sin verificar aún**.
-- **Pendientes:** Verificar y estabilizar pasos 7-8. **No empezar paso 10 hasta que se indique.**
+- **Pasos hechos:** Pasos 1-9 (migración v1→v2, `modelo/`, motor v3, validación/CRUD, navegación con pestañas, registro/ajustes, estadísticas, CSV con SAF, Simulador y pulido). Pasos 1-8 commiteados; el paso 9 compila y pasa los tests JVM, pero está **sin commitear** (lo hace el usuario).
+- **Paso 9 (resumen):** el Probador pasa a ser el Simulador (mismo `MotorFiltrado.evaluar` con la caché de reglas activas; muestra decisión, patrón, tipo, prioridad y motivo). Interruptor "guardar en el registro" (apagado por defecto) que inserta con origen `SIMULADA` vía `RepositorioRegistro.insertar`. Interruptor "incluir simulaciones" compartido por Registro y Estadísticas; las simuladas se marcan en la lista. Estados vacíos, errores claros en el diálogo de reglas y resumen de importación (`csv/TextoImportacion`).
+- **Pendiente:** paso 10. **No empezar el paso 10 hasta que se indique.**
 - **Condiciones vigentes:**
   - Windows PowerShell (no usar `tail`, `head` ni `grep`; usar `Select-Object -Last ...` o `Select-String`).
   - **No usar emulador ni `connectedDebugAndroidTest` hasta el paso 10.**

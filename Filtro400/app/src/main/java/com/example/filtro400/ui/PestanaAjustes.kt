@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.filtro400.csv.ExportadorCsv
 import com.example.filtro400.csv.ImportadorCsv
+import com.example.filtro400.csv.TextoImportacion
 import com.example.filtro400.data.RepositorioReglas
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -122,20 +123,16 @@ fun PestanaAjustes(
             }
             trabajando = false
             resultado.onSuccess { r ->
-                if (r.fallo) {
-                    mostrar("Importación cancelada: ${r.mensaje ?: "error"}. No se ha cambiado nada.", esError = true)
-                } else {
-                    mostrar(
-                        "Importación completada: ${r.anyadidas} añadidas, ${r.actualizadas} actualizadas, " +
-                            "${r.omitidas} sin cambios.",
-                        esError = false
-                    )
-                    alReglasImportadas()
-                }
+                // Resumen: añadidas / actualizadas / omitidas / erróneas (texto puro y probado).
+                mostrar(TextoImportacion.resumen(r), esError = r.fallo)
+                if (!r.fallo) alReglasImportadas()
                 erroresImportacion = r.errores
             }.onFailure { fallo ->
                 if (fallo is CancellationException) throw fallo
-                mostrar("No se pudo importar: ${fallo.message ?: "error desconocido"}. No se ha cambiado nada.", esError = true)
+                mostrar(
+                    "No se pudo abrir el fichero seleccionado. No se ha cambiado ninguna regla.",
+                    esError = true
+                )
             }
         }
     }
@@ -220,13 +217,13 @@ fun PestanaAjustes(
                         )
                     }
                     if (erroresImportacion.isNotEmpty()) {
-                        Text("Líneas con problemas:", style = MaterialTheme.typography.labelLarge)
-                        // La lista ya llega recortada (RecorteErrores): aquí no se recorta otra vez.
+                        Text("Líneas con errores (no se han importado):", style = MaterialTheme.typography.labelLarge)
+                        // La lista ya llega recortada (RecorteErrores: máx. 50 + "y N más").
                         erroresImportacion.forEach { e ->
                             Text(
-                                // numeroLinea = 0 es la línea resumen "y N más".
-                                text = if (e.numeroLinea > 0) "Línea ${e.numeroLinea}: ${e.mensaje}" else e.mensaje,
-                                style = MaterialTheme.typography.bodySmall
+                                text = TextoImportacion.linea(e),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
                             )
                         }
                     }

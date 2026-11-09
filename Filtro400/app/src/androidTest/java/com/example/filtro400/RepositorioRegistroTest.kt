@@ -253,4 +253,46 @@ class RepositorioRegistroTest {
         assertEquals(OrigenLlamada.REAL, nuevo.origen)
         assertEquals(null, nuevo.reglaPatron)
     }
+
+    // ---------- c) simulaciones guardadas desde el Simulador (paso 9) ----------
+
+    @Test
+    fun filaSimuladaSoloCuentaConElInterruptorEncendido() = runBlocking<Unit> {
+        // Igual que el Simulador: se inserta con insertar() (no insertarSincrono)
+        // y origen SIMULADA. La fecha es "ahora" del reloj real, así que las
+        // estadísticas se piden con el reloj y la zona por defecto.
+        val numeroCompleto = "+34 400 555 123"
+        repositorio.insertar(
+            numero = numeroCompleto,
+            decision = Accion.BLOQUEAR,
+            reglaId = 1L,
+            reglaPatron = "400",
+            reglaTipo = TipoRegla.PREFIJO,
+            reglaPrioridad = 0,
+            motivo = "Bloqueado por regla «400»",
+            origen = OrigenLlamada.SIMULADA
+        )
+
+        // Interruptor APAGADO (valor por defecto): no cuenta en nada.
+        assertEquals(Estadisticas.VACIAS, repositorio.estadisticas(incluirSimulaciones = false))
+        assertTrue(repositorio.rankingReglas(incluirSimulaciones = false).isEmpty())
+        assertTrue(repositorio.listarRecientes(incluirSimulaciones = false).isEmpty())
+
+        // Interruptor ENCENDIDO: cuenta como bloqueada hoy, en 7 días y en total.
+        assertEquals(
+            Estadisticas(
+                total = 1, bloqueadas = 1, permitidas = 0,
+                bloqueadasHoy = 1, permitidasHoy = 0,
+                bloqueadas7Dias = 1, permitidas7Dias = 0
+            ),
+            repositorio.estadisticas(incluirSimulaciones = true)
+        )
+        assertEquals(listOf(UsoRegla("400", 1)), repositorio.rankingReglas(incluirSimulaciones = true))
+
+        val fila = repositorio.listarRecientes(incluirSimulaciones = true).single()
+        assertEquals(OrigenLlamada.SIMULADA, fila.origen)
+        // También enmascarada: insertar() pasa por Enmascarar.numero.
+        assertEquals("400555***", fila.numeroEnmascarado)
+        assertFalse(fila.numeroEnmascarado.contains(ReglaBloqueo.normalizar(numeroCompleto)))
+    }
 }

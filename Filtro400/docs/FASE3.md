@@ -48,6 +48,19 @@
   de calendario anteriores (desde las 00:00 locales de hace 6 días). Los límites se calculan en
   `util/Fechas` (puro, zona inyectable) y `RepositorioRegistro.estadisticas(ahora, zona)` los
   usa en una sola consulta SQL. Por defecto excluyen las filas `SIMULADA`.
+- **Simulador (paso 9)**: sustituye al probador. Usa `RepositorioReglas.reglasActivas()` (la
+  misma caché `@Volatile` que el servicio; solo hace SQL si aún no está cargada) y el mismo
+  `MotorFiltrado.evaluar`. Muestra decisión, regla aplicada (patrón y etiqueta), tipo, prioridad,
+  motivo y cómo aparecería el número en el registro (enmascarado); nunca el número normalizado.
+- **Simulaciones en el registro**: interruptor "Guardar en el registro" en el Simulador, apagado
+  por defecto (`rememberSaveable`, no se guarda en `SharedPreferences`). Si está activo se llama a
+  `RepositorioRegistro.insertar(..., origen = SIMULADA)`, que enmascara dentro. Es independiente del
+  ajuste "Guardar registro" (que solo afecta a las llamadas reales).
+- **"Incluir simulaciones"**: un único estado en `PantallaInicio`, compartido por Registro y
+  Estadísticas (apagado por defecto), para que las dos pestañas cuenten lo mismo.
+- **Mensajes de importación**: `csv/TextoImportacion` (puro, con tests JVM) compone el resumen
+  "N añadidas, N actualizadas, N omitidas (sin cambios), N erróneas" y cada error "Línea N: …".
+  `ResultadoImportacion.erroneas` es el total real de filas con error, calculado antes del recorte.
 - **Enmascarado** (`util/Enmascarar`): normaliza con `ReglaBloqueo.normalizar`; vacío →
   "(oculto)"; si no, prefijo visible + "***": 1 dígito → 0 visibles ("***"); 2-3 → 1; 4-6 → 2;
   resto → `min(6, longitud − 3)`. Siempre queda oculto al menos un carácter.
@@ -55,8 +68,10 @@
 ## Interfaz
 - Barra inferior con 5 pestañas solo texto (`icon = {}`): Inicio, Reglas, Registro,
   Estadísticas, Ajustes.
-- `PestanaRegistro`: últimas 100 filas reales (`listarRecientes`), filtro
-  Todas/Bloqueadas/Permitidas, borrar con confirmación.
+- `PestanaRegistro`: últimas 100 filas (`listarRecientes`), reales o también simuladas según el
+  interruptor "incluir simulaciones"; las simuladas llevan fondo `tertiaryContainer` y la
+  etiqueta "SIMULADA (no es una llamada real)". Filtro Todas/Bloqueadas/Permitidas, borrar con
+  confirmación.
 - `PestanaEstadisticas`: tarjetas "Hoy (desde las 00:00)", "Últimos 7 días (hoy y los 6
   anteriores)" y "Todo el registro", cada una con "Bloqueadas…" y "Permitidas…"; ranking de las
   10 reglas que más han decidido (`ORDER BY c DESC, regla_patron ASC`); interruptor
@@ -90,7 +105,7 @@
   calendario con `LocalDate.minusDays` y usa `atStartOfDay(zona)`.
 
 ## Tests
-- JVM (`app/src/test`): 14 suites, 100 tests (ver `docs/INFORME_SESION.md` para el recuento por
+- JVM (`app/src/test`): 15 suites, 105 tests (paso 9: `TextoImportacionTest`, 5) (ver `docs/INFORME_SESION.md` para el recuento por
   suite de la última ejecución).
   - Nuevos o ampliados en esta sesión: `FechasTest` (7, incluye los cambios de hora de
     Europe/Madrid del 29/03/2026 y 25/10/2026), `RecorteErroresTest` (0, 50, 51 y 120 errores),
@@ -98,7 +113,8 @@
     fila inválida que no hace duplicada a la válida, etiqueta), `EnmascararTest` (1 dígito → "***").
 - Instrumentados (`app/src/androidTest`), todos con BD `test_*.db`, nunca `filtro400.db`:
   `MigracionV1V2Test` (4), `AislamientoBaseDatosTest` (3), `AplicarPlanTest` (3),
-  `RepositorioRegistroTest` (9, con instante y zona fijos: 09/11/2026 12:00 Europe/Madrid),
+  `RepositorioRegistroTest` (10, con instante y zona fijos: 09/11/2026 12:00 Europe/Madrid, salvo
+  `filaSimuladaSoloCuentaConElInterruptorEncendido`, que usa `insertar` y el reloj real),
   `ExampleInstrumentedTest` (1). En esta sesión solo se han compilado
   (`assembleDebugAndroidTest`); los ejecuta el usuario.
 
@@ -110,8 +126,9 @@
 - **Una etiqueta vacía en el CSV conserva la existente, así que el CSV no puede borrar etiquetas.**
   Para quitar una etiqueta hay que editar la regla desde la app.
 - El CSV no puede borrar reglas (solo añade o actualiza).
-- Nadie guarda todavía filas con origen `SIMULADA` (el probador no escribe en el registro), así que
-  el interruptor "incluir simulaciones" no cambia las cifras en la app real.
+- El interruptor "Guardar en el registro" del Simulador no se recuerda entre ejecuciones de la app
+  (vuelve a apagado), a propósito.
+- Una simulación guardada usa la hora real del móvil: cuenta en "hoy" con "incluir simulaciones".
 - `LimitadorBytesInputStream` lanza el error de tamaño en cuanto se han leído 1 048 576 bytes y se
   pide otra lectura, así que un fichero de exactamente 1 MB también se rechaza.
 - Sin dependencias nuevas, sin subir AGP/Kotlin/Compose/Gradle, `minSdk = 29`. Sin Room/KSP/kapt.

@@ -48,13 +48,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.example.filtro400.ReglaBloqueo
 import com.example.filtro400.data.RepositorioReglas
 import com.example.filtro400.datos.Preferencias
 import com.example.filtro400.modelo.Regla
 import com.example.filtro400.motor.Decision
 import com.example.filtro400.motor.MotorFiltrado
+import com.example.filtro400.registro.OrigenLlamada
 import com.example.filtro400.registro.RepositorioRegistro
+import com.example.filtro400.util.Enmascarar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,6 +93,11 @@ fun PantallaInicio() {
     // vuelven a leer la BD (al volver a la app, tras borrar el registro...).
     var refrescoRegistro by remember { mutableIntStateOf(0) }
 
+    // "Incluir simulaciones" es UN solo estado compartido por Registro y
+    // Estadísticas: así las dos pestañas cuentan siempre lo mismo. Apagado
+    // por defecto: solo cuentan las llamadas reales.
+    var incluirSimulaciones by rememberSaveable { mutableStateOf(false) }
+
     val cicloVida = LocalLifecycleOwner.current
     DisposableEffect(cicloVida) {
         val observador = LifecycleEventObserver { _, evento ->
@@ -118,8 +124,13 @@ fun PantallaInicio() {
     var errorCarga by remember { mutableStateOf<String?>(null) }
     var mensajeAccion by remember { mutableStateOf<String?>(null) }
     var recarga by remember { mutableIntStateOf(0) }
-    var numeroPrueba by remember { mutableStateOf("") }
-    var resultadoPrueba by remember { mutableStateOf<Decision?>(null) }
+    // --- Simulador ---
+    var numeroSimulado by remember { mutableStateOf("") }
+    var resultadoSimulado by remember { mutableStateOf<Decision?>(null) }
+    // Interruptor "guardar en el registro": APAGADO por defecto para no
+    // llenar el registro con pruebas sin querer.
+    var guardarSimulacion by rememberSaveable { mutableStateOf(false) }
+    var avisoSimulacion by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(recarga) {
         cargando = true
@@ -130,7 +141,9 @@ fun PantallaInicio() {
         resultado.onSuccess { lista ->
             reglas = lista
             errorCarga = null
-            resultadoPrueba = null
+            // Las reglas han cambiado: el último resultado ya no es fiable.
+            resultadoSimulado = null
+            avisoSimulacion = null
         }.onFailure { fallo ->
             errorCarga = "No se pudieron cargar las reglas: ${fallo.message ?: "error desconocido"}"
         }
@@ -197,23 +210,58 @@ fun PantallaInicio() {
                         )
                     }
                     item {
-                        TarjetaProbador(
-                            numero = numeroPrueba,
+                        TarjetaSimulador(
+                            numero = numeroSimulado,
                             alCambiarNumero = {
-                                numeroPrueba = it
-                                resultadoPrueba = null
+                                numeroSimulado = it
+                                resultadoSimulado = null
+                                avisoSimulacion = null
                             },
-                            resultado = resultadoPrueba,
-                            alProbar = {
+                            guardarEnRegistro = guardarSimulacion,
+                            alCambiarGuardarEnRegistro = { guardarSimulacion = it },
+                            resultado = resultadoSimulado,
+                            aviso = avisoSimulacion,
+                            alSimular = {
+                                val numero = numeroSimulado
+                                val guardar = guardarSimulacion
                                 alcance.launch {
+                                    // Mismas reglas que el servicio: la copia en caché de
+                                    // las reglas activas (no se hace SQL si ya está cargada;
+                                    // solo la primera vez, y por eso va en Dispatchers.IO).
                                     val consulta = withContext(Dispatchers.IO) {
                                         runCatching { repositorio.reglasActivas() }
                                     }
-                                    consulta.onSuccess { reglasActivas ->
-                                        resultadoPrueba = MotorFiltrado.evaluar(numeroPrueba, reglasActivas)
-                                    }.onFailure { fallo ->
-                                        mensajeAccion = "No se pudo probar el número: " +
+                                    val reglasActivas = consulta.getOrElse { fallo ->
+                                        avisoSimulacion = "No se pudieron leer las reglas activas: " +
                                             (fallo.message ?: "error desconocido")
+                                        return@launch
+                                    }
+                                    // El MISMO motor puro que usa FiltroLlamadasService.
+                                    val decision = MotorFiltrado.evaluar(numero, reglasActivas)
+                                    resultadoSimulado = decision
+                                    avisoSimulacion = null
+
+                                    if (guardar) {
+                                        // insertar() ya enmascara el número antes de guardarlo.
+                                        val guardado = runCatching {
+                                            repositorioRegistro.insertar(
+                                                numero = numero,
+                                                decision = decision.accion,
+                                                reglaId = decision.regla?.id,
+                                                reglaPatron = decision.regla?.patron,
+                                                reglaTipo = decision.regla?.tipo,
+                                                reglaPrioridad = decision.regla?.prioridad,
+                                                motivo = decision.motivo,
+                                                origen = OrigenLlamada.SIMULADA
+                                            )
+                                        }
+                                        avisoSimulacion = if (guardado.isSuccess) {
+                                            refrescoRegistro++
+                                            "Guardada en el registro como simulación. No cuenta en " +
+                                                "Registro ni en Estadísticas salvo con «Incluir simulaciones»."
+                                        } else {
+                                            "No se pudo guardar la simulación en el registro."
+                                        }
                                     }
                                 }
                             }
@@ -290,15 +338,12 @@ fun PantallaInicio() {
                             }
                         }
                     }
-                    if (!cargando && reglas.isEmpty()) {
+                    if (!cargando && errorCarga == null && reglas.isEmpty()) {
                         item {
-                            Card {
-                                Text(
-                                    text = "No hay reglas guardadas. Ahora mismo se permitirían todas las llamadas.",
-                                    modifier = Modifier.padding(16.dp),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
+                            TarjetaAviso(
+                                "Todavía no hay reglas. Mientras no añadas ninguna, se permiten " +
+                                    "todas las llamadas. Pulsa «Añadir regla» o importa un CSV desde Ajustes."
+                            )
                         }
                     }
                     items(reglas, key = { it.id }) { regla ->
@@ -325,6 +370,8 @@ fun PantallaInicio() {
                 repositorioRegistro = repositorioRegistro,
                 refresco = refrescoRegistro,
                 guardarRegistro = guardarRegistro,
+                incluirSimulaciones = incluirSimulaciones,
+                alCambiarIncluirSimulaciones = { incluirSimulaciones = it },
                 alBorrarRegistro = { mostrarConfirmacionBorrarRegistro = true },
                 contentPadding = paddingValores
             )
@@ -332,6 +379,8 @@ fun PantallaInicio() {
             3 -> PestanaEstadisticas(
                 repositorioRegistro = repositorioRegistro,
                 refresco = refrescoRegistro,
+                incluirSimulaciones = incluirSimulaciones,
+                alCambiarIncluirSimulaciones = { incluirSimulaciones = it },
                 contentPadding = paddingValores
             )
 
@@ -456,12 +505,22 @@ private fun TarjetaEstado(filtroActivo: Boolean, alActivar: () -> Unit) {
     }
 }
 
+/**
+ * Simulador: evalúa un número con el mismo [MotorFiltrado.evaluar] y las mismas
+ * reglas activas en caché que el servicio, y explica la decisión.
+ *
+ * Nunca muestra el número tecleado ya normalizado: solo cómo quedaría
+ * enmascarado en el registro (igual que una llamada real).
+ */
 @Composable
-private fun TarjetaProbador(
+private fun TarjetaSimulador(
     numero: String,
     alCambiarNumero: (String) -> Unit,
+    guardarEnRegistro: Boolean,
+    alCambiarGuardarEnRegistro: (Boolean) -> Unit,
     resultado: Decision?,
-    alProbar: () -> Unit
+    aviso: String?,
+    alSimular: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -469,30 +528,42 @@ private fun TarjetaProbador(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "Probador de números",
+                text = "Simulador de llamadas",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Usa las mismas reglas guardadas que el servicio real.",
+                text = "Usa el mismo motor y las mismas reglas activas que el filtro real.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedTextField(
                 value = numero,
                 onValueChange = alCambiarNumero,
-                label = { Text("Ej. +34 400 555 123") },
+                label = { Text("Número entrante") },
+                placeholder = { Text("Ej. +34 400 555 123") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            Button(onClick = alProbar) {
-                Text("Probar")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Guardar en el registro")
+                    Text(
+                        text = "Se guarda como «simulada», con el número enmascarado.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = guardarEnRegistro, onCheckedChange = alCambiarGuardarEnRegistro)
+            }
+            Button(onClick = alSimular) {
+                Text("Simular")
             }
 
             if (resultado != null) {
                 Text(
-                    text = if (resultado.bloquea) "🚫 Se BLOQUEARÍA" else "✅ Pasaría",
+                    text = if (resultado.bloquea) "🚫 Se BLOQUEARÍA" else "✅ Se PERMITIRÍA",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = if (resultado.bloquea) {
@@ -501,28 +572,39 @@ private fun TarjetaProbador(
                         MaterialTheme.colorScheme.primary
                     }
                 )
-                Text(resultado.motivo, style = MaterialTheme.typography.bodyMedium)
-                resultado.regla?.let { regla ->
+                val regla = resultado.regla
+                if (regla != null) {
                     val etiqueta = regla.etiqueta
                         ?.takeIf { it.isNotBlank() }
                         ?.let { " — $it" }
                         .orEmpty()
-                    Text(
-                        text = "Regla aplicada: ${regla.patron}$etiqueta",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    DatoSimulacion("Regla aplicada", "${regla.patron}$etiqueta")
+                    DatoSimulacion("Tipo", textoTipo(regla.tipo))
+                    DatoSimulacion("Prioridad", regla.prioridad.toString())
+                } else {
+                    DatoSimulacion("Regla aplicada", "ninguna")
                 }
-                val normalizado = ReglaBloqueo.normalizar(numero)
-                if (normalizado.isNotEmpty()) {
-                    Text(
-                        text = "Número normalizado: $normalizado",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                DatoSimulacion("Motivo", resultado.motivo)
+                DatoSimulacion("En el registro aparecería como", Enmascarar.numero(numero))
+            }
+            aviso?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
+}
+
+/** Una línea "Etiqueta: valor" del resultado del simulador. */
+@Composable
+private fun DatoSimulacion(etiqueta: String, valor: String) {
+    Text(
+        text = "$etiqueta: $valor",
+        style = MaterialTheme.typography.bodyMedium
+    )
 }
 
 @Composable
@@ -565,7 +647,7 @@ private fun TarjetaRegla(
                         }
                     )
                     Text(
-                        text = "${regla.tipo.name} • ${regla.accion.name} • prio ${regla.prioridad}",
+                        text = "${textoTipo(regla.tipo)} • ${textoAccion(regla.accion)} • prioridad ${regla.prioridad}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

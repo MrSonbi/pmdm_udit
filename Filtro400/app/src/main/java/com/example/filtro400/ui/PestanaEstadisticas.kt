@@ -14,14 +14,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,17 +36,19 @@ private const val TOP_REGLAS = 10
  *    y total) en una sola consulta; "hoy" empieza a las 00:00 de la zona local;
  *  - [RepositorioRegistro.rankingReglas]: reglas que más han decidido.
  *
- * El interruptor "incluir simulaciones" solo cambia el parámetro
- * `incluirSimulaciones`; ahora mismo el probador no guarda simulaciones.
+ * El interruptor "incluir simulaciones" (compartido con Registro) solo cambia
+ * el parámetro `incluirSimulaciones`: por defecto las filas SIMULADAS que
+ * guarda el Simulador no cuentan.
  * Las consultas van en Dispatchers.IO dentro del repositorio.
  */
 @Composable
 fun PestanaEstadisticas(
     repositorioRegistro: RepositorioRegistro,
     refresco: Int,
+    incluirSimulaciones: Boolean,
+    alCambiarIncluirSimulaciones: (Boolean) -> Unit,
     contentPadding: PaddingValues
 ) {
-    var incluirSimulaciones by rememberSaveable { mutableStateOf(false) }
     var estadisticas by remember { mutableStateOf<RepositorioRegistro.Estadisticas?>(null) }
     var ranking by remember { mutableStateOf<List<RepositorioRegistro.UsoRegla>>(emptyList()) }
     var cargando by remember { mutableStateOf(true) }
@@ -89,24 +89,7 @@ fun PestanaEstadisticas(
                 fontWeight = FontWeight.Bold
             )
         }
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Incluir simulaciones")
-                        Text(
-                            text = "Por defecto solo cuentan las llamadas reales.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = incluirSimulaciones, onCheckedChange = { incluirSimulaciones = it })
-                }
-            }
-        }
+        item { TarjetaIncluirSimulaciones(incluirSimulaciones, alCambiarIncluirSimulaciones) }
 
         val datos = estadisticas
         when {
@@ -120,8 +103,13 @@ fun PestanaEstadisticas(
 
             datos == null || datos.total == 0 -> item {
                 TarjetaAviso(
-                    "Todavía no hay llamadas registradas, así que no hay estadísticas. " +
-                        "Se rellenan con las llamadas que filtra el servicio."
+                    if (incluirSimulaciones) {
+                        "Todavía no hay llamadas registradas (ni reales ni simuladas), así que no " +
+                            "hay estadísticas."
+                    } else {
+                        "Todavía no hay llamadas reales registradas, así que no hay estadísticas. " +
+                            "Se rellenan con las llamadas que filtra el servicio."
+                    }
                 )
             }
 

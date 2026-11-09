@@ -22,7 +22,8 @@ import java.time.ZoneId
  *  - tests: `RepositorioRegistro(BaseDatos(contexto, "test_xxx.db"))`.
  *
  * Todas las consultas de lectura reciben `incluirSimulaciones` (false por
- * defecto): las pruebas del "probador" no deben inflar las cifras reales.
+ * defecto): las simulaciones guardadas desde el Simulador (origen SIMULADA)
+ * no deben inflar las cifras reales.
  */
 class RepositorioRegistro(
     private val baseDatos: BaseDatos

@@ -59,7 +59,8 @@ class FiltroLlamadasService : CallScreeningService() {
 
             respondToCall(callDetails, respuesta)
         } catch (t: Throwable) {
-            Log.w("Filtro400", "No se pudo responder a la llamada", t)
+            // Solo el tipo de excepción: el mensaje o la traza podrían incluir el número.
+            Log.w("Filtro400", "No se pudo responder a la llamada (${t.javaClass.simpleName})")
         }
 
         // Loguear/registrar va DESPUÉS de responder, dentro de try/catch.

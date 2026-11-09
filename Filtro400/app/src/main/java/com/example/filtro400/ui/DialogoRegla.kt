@@ -1,5 +1,6 @@
 package com.example.filtro400.ui
 
+import android.database.sqlite.SQLiteConstraintException
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,7 +51,10 @@ fun DialogoRegla(
     var prioridadTexto by remember(claveEstado) {
         mutableStateOf((regla?.prioridad ?: ValidacionReglas.prioridadPorDefecto(accionSeleccionada)).toString())
     }
+    // Error del patrón o del guardado (se muestra bajo el patrón) y error de la
+    // prioridad (se muestra bajo la prioridad): así el usuario sabe qué corregir.
     var error by remember(claveEstado) { mutableStateOf<String?>(null) }
+    var errorPrioridad by remember(claveEstado) { mutableStateOf<String?>(null) }
     var guardando by remember(claveEstado) { mutableStateOf(false) }
     var mostrarConfirmacion by remember(claveEstado) { mutableStateOf(false) }
     var patronPendiente by remember(claveEstado) { mutableStateOf<String?>(null) }
@@ -80,14 +84,25 @@ fun DialogoRegla(
             if (fallo == null) {
                 alCerrar()
             } else {
-                error = "No se pudo guardar. Puede que el patrón ya exista. " +
-                    (fallo.message ?: "")
+                error = mensajeFalloGuardado(fallo)
             }
         }
     }
 
     fun intentarGuardar() {
-        val prioridad = prioridadTexto.trim().toIntOrNull()
+        // Prioridad vacía -> la de por defecto; texto que no es un número -> error
+        // (antes se cambiaba en silencio por la prioridad por defecto).
+        val textoPrioridad = prioridadTexto.trim()
+        val prioridad = textoPrioridad.toIntOrNull()
+        if (textoPrioridad.isNotEmpty() && prioridad == null) {
+            errorPrioridad = "La prioridad debe ser un número entero entre 0 y 100."
+            return
+        }
+        if (prioridad != null && prioridad !in 0..100) {
+            errorPrioridad = "La prioridad debe estar entre 0 y 100."
+            return
+        }
+        errorPrioridad = null
         val validacion = ValidacionReglas.validar(
             textoPatron,
             patronesExistentes,
@@ -181,13 +196,21 @@ fun DialogoRegla(
                 }
                 OutlinedTextField(
                     value = prioridadTexto,
-                    onValueChange = { prioridadTexto = it; error = null },
-                    label = { Text("Prioridad (0..100)") },
+                    onValueChange = { prioridadTexto = it; errorPrioridad = null },
+                    label = { Text("Prioridad (0-100)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     enabled = !guardando,
+                    isError = errorPrioridad != null,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (errorPrioridad != null) {
+                    Text(
+                        text = errorPrioridad.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 OutlinedTextField(
                     value = textoEtiqueta,
                     onValueChange = { textoEtiqueta = it },
@@ -198,7 +221,8 @@ fun DialogoRegla(
                 )
                 Text(
                     text = "Se guarda normalizado: sin espacios, guiones ni +34. " +
-                        "Bloquear por defecto prioridad 0, permitir por defecto prioridad 100.",
+                        "Prioridad por defecto: 0 al bloquear y 100 al permitir. " +
+                        "Con prioridad vacía se usa la de por defecto.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -206,7 +230,7 @@ fun DialogoRegla(
         },
         confirmButton = {
             TextButton(onClick = { intentarGuardar() }, enabled = !guardando) {
-                Text(if (guardando) "Guardando..." else "Guardar")
+                Text(if (guardando) "Guardando…" else "Guardar")
             }
         },
         dismissButton = {
@@ -244,4 +268,14 @@ fun DialogoRegla(
             }
         )
     }
+}
+
+/**
+ * Mensaje claro para el usuario cuando falla el guardado en la BD.
+ * La columna `patron` es UNIQUE: si dos reglas acaban con el mismo patrón
+ * normalizado, SQLite lanza [SQLiteConstraintException].
+ */
+private fun mensajeFalloGuardado(fallo: Throwable): String = when (fallo) {
+    is SQLiteConstraintException -> "Ya existe una regla con ese patrón."
+    else -> "No se pudo guardar la regla. Inténtalo de nuevo."
 }

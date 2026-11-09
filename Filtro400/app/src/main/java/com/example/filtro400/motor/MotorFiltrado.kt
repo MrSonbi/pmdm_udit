@@ -9,7 +9,7 @@ import com.example.filtro400.modelo.TipoRegla
  * Resultado de evaluar un número.
  *
  * - [regla] es la regla que ha coincidido, o null si ninguna coincide.
- * - [motivo] es un texto breve para mostrar en el probador/registro.
+ * - [motivo] es un texto breve para mostrar en el simulador/registro.
  */
 data class Decision(
     val accion: Accion,
