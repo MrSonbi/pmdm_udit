@@ -1,0 +1,21 @@
+﻿Recuento por suite JVM (app/build/test-results/testDebugUnitTest/*.xml)
+Generado tras: .\gradlew.bat clean testDebugUnitTest assembleDebug assembleDebugAndroidTest (09/11/2026)
+
+Suite | Tests | Fallos | Errores | Omitidos | Tiempo (s) | Marca de tiempo
+com.example.filtro400.csv.CsvCodecTest | 10 | 0 | 0 | 0 | 0.008 | 2026-11-09T14:07:35.890Z
+com.example.filtro400.csv.ExportadorImportadorRoundTripTest | 2 | 0 | 0 | 0 | 0.005 | 2026-11-09T14:07:35.899Z
+com.example.filtro400.csv.PlanificadorImportacionTest | 21 | 0 | 0 | 0 | 0.005 | 2026-11-09T14:07:35.906Z
+com.example.filtro400.csv.RecorteErroresTest | 4 | 0 | 0 | 0 | 0.003 | 2026-11-09T14:07:35.912Z
+com.example.filtro400.csv.ResumenPlanTest | 4 | 0 | 0 | 0 | 0.001 | 2026-11-09T14:07:35.916Z
+com.example.filtro400.csv.TextoImportacionTest | 5 | 0 | 0 | 0 | 0.002 | 2026-11-09T14:07:35.918Z
+com.example.filtro400.EnmascararTest | 5 | 0 | 0 | 0 | 0.02 | 2026-11-09T14:07:35.806Z
+com.example.filtro400.ExampleUnitTest | 1 | 0 | 0 | 0 | 0.0 | 2026-11-09T14:07:35.828Z
+com.example.filtro400.FechasTest | 7 | 0 | 0 | 0 | 0.008 | 2026-11-09T14:07:35.831Z
+com.example.filtro400.MapeoReglaTest | 3 | 0 | 0 | 0 | 0.004 | 2026-11-09T14:07:35.842Z
+com.example.filtro400.MotorFiltradoFase3Test | 11 | 0 | 0 | 0 | 0.02 | 2026-11-09T14:07:35.848Z
+com.example.filtro400.MotorFiltradoTest | 7 | 0 | 0 | 0 | 0.002 | 2026-11-09T14:07:35.869Z
+com.example.filtro400.ReglaBloqueoTest | 7 | 0 | 0 | 0 | 0.001 | 2026-11-09T14:07:35.872Z
+com.example.filtro400.ValidacionReglasFase3Test | 6 | 0 | 0 | 0 | 0.009 | 2026-11-09T14:07:35.874Z
+com.example.filtro400.ValidacionReglasTest | 12 | 0 | 0 | 0 | 0.003 | 2026-11-09T14:07:35.885Z
+
+TOTAL (15 suites) | 105 | 0 | 0 | 0

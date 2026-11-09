@@ -1,0 +1,92 @@
+Reusing configuration cache.
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:generateDebugAndroidTestAssets UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:clean
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:preDebugAndroidTestBuild SKIPPED
+> Task :app:writeDebugAppMetadata
+> Task :app:extractDeepLinksDebug
+> Task :app:generateDebugResources
+> Task :app:mapDebugSourceSetPaths
+> Task :app:javaPreCompileDebug
+> Task :app:processDebugNavigationResources
+> Task :app:javaPreCompileDebugUnitTest
+> Task :app:desugarDebugFileDependencies
+> Task :app:processDebugAndroidTestNavigationResources
+> Task :app:mergeDebugJniLibFolders
+> Task :app:mergeDebugAssets
+> Task :app:validateSigningDebug
+> Task :app:javaPreCompileDebugAndroidTest
+> Task :app:compileDebugNavigationResources
+> Task :app:desugarDebugAndroidTestFileDependencies
+> Task :app:mapDebugAndroidTestSourceSetPaths
+> Task :app:compressDebugAssets
+> Task :app:mergeDebugAndroidTestAssets
+> Task :app:checkDebugAndroidTestDuplicateClasses
+> Task :app:compileDebugAndroidTestNavigationResources
+> Task :app:mergeDebugAndroidTestJniLibFolders
+> Task :app:compressDebugAndroidTestAssets
+> Task :app:validateSigningDebugAndroidTest
+> Task :app:writeDebugAndroidTestSigningConfigVersions
+> Task :app:checkDebugAarMetadata
+> Task :app:checkDebugAndroidTestAarMetadata
+> Task :app:mergeLibDexDebugAndroidTest
+> Task :app:mergeDebugNativeLibs
+> Task :app:checkDebugDuplicateClasses
+> Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
+> Task :app:generateDebugAndroidTestResources
+> Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
+> Task :app:mergeDebugAndroidTestManifest
+> Task :app:processDebugAndroidTestManifest
+> Task :app:packageDebugResources
+> Task :app:mergeLibDexDebug
+> Task :app:processDebugMainManifest
+> Task :app:packageDebugAndroidTestResources
+> Task :app:processDebugManifest
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugManifestForPackage
+> Task :app:parseDebugAndroidTestLocalResources
+> Task :app:generateDebugRFile
+> Task :app:generateDebugAndroidTestRFile
+> Task :app:stripDebugDebugSymbols
+> Task :app:mergeExtDexDebugAndroidTest
+> Task :app:generateDebugGlobalSynthetics
+> Task :app:generateDebugAndroidTestGlobalSynthetics
+> Task :app:mergeDebugAndroidTestResources
+> Task :app:processDebugAndroidTestResources
+> Task :app:mergeDebugResources
+> Task :app:processDebugResources
+> Task :app:mergeExtDexDebug
+> Task :app:compileDebugKotlin
+> Task :app:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:dexBuilderDebug
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:packageDebug
+> Task :app:assembleDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:compileDebugAndroidTestKotlin
+> Task :app:compileDebugAndroidTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugAndroidTestJavaRes
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+> Task :app:dexBuilderDebugAndroidTest
+> Task :app:mergeProjectDexDebugAndroidTest
+> Task :app:mergeDebugAndroidTestJavaResource
+> Task :app:packageDebugAndroidTest
+> Task :app:assembleDebugAndroidTest
+> Task :app:createDebugAndroidTestApkListingFileRedirect
+> Task :app:testDebugUnitTest
+
+BUILD SUCCESSFUL in 7s
+73 actionable tasks: 73 executed
+Configuration cache entry reused.
