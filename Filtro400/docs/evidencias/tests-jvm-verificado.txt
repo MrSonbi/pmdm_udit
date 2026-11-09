@@ -1,0 +1,16 @@
+com.example.filtro400.EnmascararTest 5 0 0
+com.example.filtro400.ExampleUnitTest 1 0 0
+com.example.filtro400.FechasTest 7 0 0
+com.example.filtro400.MapeoReglaTest 3 0 0
+com.example.filtro400.MotorFiltradoFase3Test 11 0 0
+com.example.filtro400.MotorFiltradoTest 7 0 0
+com.example.filtro400.ReglaBloqueoTest 7 0 0
+com.example.filtro400.ValidacionReglasFase3Test 6 0 0
+com.example.filtro400.ValidacionReglasTest 12 0 0
+com.example.filtro400.csv.CsvCodecTest 10 0 0
+com.example.filtro400.csv.ExportadorImportadorRoundTripTest 2 0 0
+com.example.filtro400.csv.PlanificadorImportacionTest 21 0 0
+com.example.filtro400.csv.RecorteErroresTest 4 0 0
+com.example.filtro400.csv.ResumenPlanTest 4 0 0
+com.example.filtro400.csv.TextoImportacionTest 5 0 0
+TOTAL tests/fallos/errores: 105 0 0

@@ -1,0 +1,5 @@
+com.example.filtro400.AislamientoBaseDatosTest tests= 3 fallos= 0 errores= 0
+com.example.filtro400.AplicarPlanTest tests= 3 fallos= 0 errores= 0
+com.example.filtro400.ExampleInstrumentedTest tests= 1 fallos= 0 errores= 0
+com.example.filtro400.MigracionV1V2Test tests= 4 fallos= 0 errores= 0
+com.example.filtro400.RepositorioRegistroTest tests= 10 fallos= 0 errores= 0
