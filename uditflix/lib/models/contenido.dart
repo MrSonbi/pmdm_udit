@@ -16,9 +16,10 @@ class Contenido {
     //Constructor: permite crear nuevos Contenidos
 
     const Contenido ({
-        required this.id,
-        required this.titulo,
-        required this.tipo,
-        required this.duracion,
+        required this.id, 
+        required this.titulo, 
+        required this.descripcion, 
+        required this.tipo, 
+        required this.duracion
     });
 }
