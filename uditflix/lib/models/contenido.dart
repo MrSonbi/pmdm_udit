@@ -12,14 +12,23 @@ class Contenido {
     //Tipo de contenido: vídeo, cómic o juego
     final String tipo;
     final String duracion;
+    //URL del vídeo de demostración (solo para contenidos reproducibles)
+    final String? videoUrl;
+    //Imagen vertical (póster 2:3) para las filas del catálogo
+    final String? imagenUrl;
+    //Imagen horizontal grande para el destacado y la cabecera de la ficha
+    final String? imagenHeroUrl;
 
     //Constructor: permite crear nuevos Contenidos
 
     const Contenido ({
-        required this.id, 
-        required this.titulo, 
-        required this.descripcion, 
-        required this.tipo, 
-        required this.duracion
+        required this.id,
+        required this.titulo,
+        required this.descripcion,
+        required this.tipo,
+        required this.duracion,
+        this.videoUrl,
+        this.imagenUrl,
+        this.imagenHeroUrl,
     });
 }
